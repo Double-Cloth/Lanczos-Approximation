@@ -1,0 +1,10 @@
+[ 27%] Built target bignum
+[ 45%] Built target lanczos
+[ 54%] Building CXX object CMakeFiles/lanczos_app.dir/src/main.cpp.obj
+D:\DC\program-projects\C++\Lanczos-Approximation\src\main.cpp: In function 'int main(int, char**)':
+D:\DC\program-projects\C++\Lanczos-Approximation\src\main.cpp:244:36: error: 'gamma_val' was not declared in this scope
+  244 |         std::string computed_str = gamma_val.to_decimal_string(display_digits);
+      |                                    ^~~~~~~~~
+mingw32-make[2]: *** [CMakeFiles\lanczos_app.dir\build.make:79: CMakeFiles/lanczos_app.dir/src/main.cpp.obj] Error 1
+mingw32-make[1]: *** [CMakeFiles\Makefile2:163: CMakeFiles/lanczos_app.dir/all] Error 2
+mingw32-make: *** [Makefile:90: all] Error 2

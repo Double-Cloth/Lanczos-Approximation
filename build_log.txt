@@ -1,0 +1,7 @@
+[ 27%] Built target bignum
+[ 45%] Built target lanczos
+[ 54%] Building CXX object CMakeFiles/lanczos_app.dir/src/main.cpp.obj
+[ 63%] Linking CXX executable lanczos_app.exe
+[ 63%] Built target lanczos_app
+[ 81%] Built target test_bigfloat
+[100%] Built target test_lanczos

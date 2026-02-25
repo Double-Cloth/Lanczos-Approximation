@@ -1,0 +1,2 @@
+D:\ProgramFiles\GreenSoftware\mingw64\bin\ar.exe qc libbignum.a CMakeFiles/bignum.dir/src/BigInt.cpp.obj CMakeFiles/bignum.dir/src/BigFloat.cpp.obj
+D:\ProgramFiles\GreenSoftware\mingw64\bin\ranlib.exe libbignum.a
