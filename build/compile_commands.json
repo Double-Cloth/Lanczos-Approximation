@@ -1,37 +1,37 @@
 [
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/bignum.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\bignum.dir\\src\\BigInt.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\BigInt.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/bignum.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\bignum.dir\\src\\BigInt.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\BigInt.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/src/BigInt.cpp",
   "output": "CMakeFiles/bignum.dir/src/BigInt.cpp.obj"
 },
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/bignum.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\bignum.dir\\src\\BigFloat.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\BigFloat.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/bignum.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\bignum.dir\\src\\BigFloat.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\BigFloat.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/src/BigFloat.cpp",
   "output": "CMakeFiles/bignum.dir/src/BigFloat.cpp.obj"
 },
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/lanczos.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\lanczos.dir\\src\\lanczos.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\lanczos.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/lanczos.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\lanczos.dir\\src\\lanczos.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\lanczos.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/src/lanczos.cpp",
   "output": "CMakeFiles/lanczos.dir/src/lanczos.cpp.obj"
 },
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/lanczos_app.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\lanczos_app.dir\\src\\main.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\main.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/lanczos_app.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\lanczos_app.dir\\src\\main.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\src\\main.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/src/main.cpp",
   "output": "CMakeFiles/lanczos_app.dir/src/main.cpp.obj"
 },
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/test_bigfloat.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\test_bigfloat.dir\\tests\\test_bigfloat.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\tests\\test_bigfloat.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/test_bigfloat.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\test_bigfloat.dir\\tests\\test_bigfloat.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\tests\\test_bigfloat.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/tests/test_bigfloat.cpp",
   "output": "CMakeFiles/test_bigfloat.dir/tests/test_bigfloat.cpp.obj"
 },
 {
   "directory": "D:/DC/program-projects/C++/Lanczos-Approximation/build",
-  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/test_lanczos.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\test_lanczos.dir\\tests\\test_lanczos.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\tests\\test_lanczos.cpp",
+  "command": "D:\\ProgramFiles\\GreenSoftware\\mingw64\\bin\\g++.exe  @CMakeFiles/test_lanczos.dir/includes_CXX.rsp -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles\\test_lanczos.dir\\tests\\test_lanczos.cpp.obj -c D:\\DC\\program-projects\\C++\\Lanczos-Approximation\\tests\\test_lanczos.cpp",
   "file": "D:/DC/program-projects/C++/Lanczos-Approximation/tests/test_lanczos.cpp",
   "output": "CMakeFiles/test_lanczos.dir/tests/test_lanczos.cpp.obj"
 }

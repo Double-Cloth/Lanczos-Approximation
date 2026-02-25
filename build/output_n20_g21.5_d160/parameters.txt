@@ -1,4 +1,0 @@
-n = 20
-g = 21.5
-precision_decimal_digits = 160
-precision_binary_bits = 596
