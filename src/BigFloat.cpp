@@ -78,8 +78,18 @@ void BigFloat::normalize() {
     int bl = mantissa_.bit_length();
     if (bl > precision_bits_) {
         int shift = bl - precision_bits_;
+        // 四舍五入: 检查被丢弃的最高位 (round-to-nearest)
+        bool round_up = (shift > 0) && mantissa_.get_bit(shift - 1);
         mantissa_ >>= shift;
         exponent_ += shift;
+        if (round_up) {
+            mantissa_ += BigInt(1);
+            // 进位可能使位长增加一位
+            if (mantissa_.bit_length() > precision_bits_) {
+                mantissa_ >>= 1;
+                exponent_++;
+            }
+        }
     } else if (bl < precision_bits_) {
         int shift = precision_bits_ - bl;
         mantissa_ <<= shift;
@@ -404,6 +414,7 @@ BigFloat BigFloat::sqrt(const BigFloat& x) {
     if (x.is_negative()) throw std::runtime_error("sqrt of negative number");
     
     int prec = x.precision();
+    int work_prec = prec + 64; // 增加保护位
     
     // 初始估计: 使用 double
     double approx = 0.5; // 粗略
@@ -411,15 +422,15 @@ BigFloat BigFloat::sqrt(const BigFloat& x) {
     int total_exp = bl + static_cast<int>(x.exponent());
     approx = std::ldexp(1.0, total_exp / 2);
     
-    BigFloat guess(approx, prec + 32);
-    BigFloat half(0, prec + 32);
+    BigFloat guess(approx, work_prec);
+    BigFloat half(0, work_prec);
     {
-        BigFloat one(1, prec + 32);
-        BigFloat two(2, prec + 32);
+        BigFloat one(1, work_prec);
+        BigFloat two(2, work_prec);
         half = one / two;
     }
     BigFloat val = x;
-    val.set_precision(prec + 32);
+    val.set_precision(work_prec);
     
     // 牛顿迭代
     int iters = 0;
@@ -446,22 +457,22 @@ BigFloat BigFloat::exp(const BigFloat& x) {
     if (x.is_zero()) return BigFloat(1, x.precision());
     
     int prec = x.precision();
-    int work_prec = prec + 64;
+    int work_prec = prec + 128; // 增加保护位以抵消平方累积误差
     
     BigFloat val = x;
     val.set_precision(work_prec);
     bool negate = val.is_negative();
     if (negate) val = val.abs();
     
-    // Range reduction: 将 val 除以 2^r 使得 val < 1
+    // Range reduction: 将 val 除以 2^r 使得 val 足够小
     int r = 0;
     {
         int bl = val.mantissa().bit_length();
         int total = bl + static_cast<int>(val.exponent());
         if (total > 0) {
-            r = total + 16; // 多缩小一些加速收敛
+            r = total + 8; // 适度缩小，减少平方次数以降低误差累积
         } else {
-            r = 16;
+            r = std::max(0, 8 + total); // 避免不必要的过度缩减
         }
     }
     BigFloat reduced = val.mul_pow2(-r);
@@ -502,7 +513,7 @@ BigFloat BigFloat::ln(const BigFloat& x) {
     if (x.is_zero() || x.is_negative()) throw std::runtime_error("ln of non-positive number");
     
     int prec = x.precision();
-    int work_prec = prec + 64;
+    int work_prec = prec + 128; // 增加保护位
 
     // 分解: x = mant * 2^exp
     // 提取使 mant 在 [1, 2) 附近
@@ -564,16 +575,50 @@ BigFloat BigFloat::ln(const BigFloat& x) {
 }
 
 // --- pow(base, exp) = exp(exp * ln(base)) ---
+// 对整数指数使用二进制快速幂以避免 ln 引入的精度损失
 BigFloat BigFloat::pow(const BigFloat& base, const BigFloat& exponent) {
     if (exponent.is_zero()) return BigFloat(1, base.precision());
     if (base.is_zero()) return BigFloat(0, base.precision());
     
     int prec = std::max(base.precision(), exponent.precision());
+    int work_prec = prec + 128;
     
+    // 检查指数是否为非负整数
+    // 条件: exponent >= 0 且 exponent 为 0 或 exponent_ >= 0 (没有小数位)
+    if (!exponent.is_negative() && exponent.exponent() >= 0) {
+        // 指数是非负整数，提取整数值
+        BigInt mant = exponent.mantissa();
+        int64_t shift = exponent.exponent();
+        if (shift > 0 && shift <= 64) {
+            mant <<= static_cast<int>(shift);
+        }
+        int64_t total_bits = static_cast<int64_t>(mant.bit_length());
+        if (total_bits <= 31) {
+            // 安全地转为整数
+            std::string n_str = mant.to_decimal_string();
+            int64_t n_val = std::stoll(n_str);
+            if (n_val >= 0 && n_val <= 1000) {
+                // 使用二进制快速幂
+                BigFloat result(1, work_prec);
+                BigFloat b = base;
+                b.set_precision(work_prec);
+                int64_t p = n_val;
+                while (p > 0) {
+                    if (p & 1) result *= b;
+                    b *= b;
+                    p >>= 1;
+                }
+                result.set_precision(prec);
+                return result;
+            }
+        }
+    }
+    
+    // 通用路径: exp(exp * ln(base))
     BigFloat ln_base = ln(base.abs());
-    ln_base.set_precision(prec + 64);
+    ln_base.set_precision(work_prec);
     BigFloat exp_val = exponent;
-    exp_val.set_precision(prec + 64);
+    exp_val.set_precision(work_prec);
     
     return exp(exp_val * ln_base);
 }

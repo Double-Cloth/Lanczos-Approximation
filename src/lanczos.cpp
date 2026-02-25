@@ -65,7 +65,7 @@ struct SignedBigInt {
 
 std::vector<BigFloat> compute_lanczos_coefficients(int n, const std::string& g_str, int decimal_digits) {
     int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) + 64;
-    int work_bits = bits + 128;
+    int work_bits = bits + 256; // 增加保护位以提高精度
 
     BigFloat bf_g = BigFloat::from_string(g_str, work_bits);
     std::cout << "[lanczos] n=" << n << " g=" << g_str 
@@ -283,7 +283,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n, const std::string& g_s
 
 BigFloat lanczos_gamma(const BigFloat& z, const std::vector<BigFloat>& coeffs, const std::string& g_str, int decimal_digits) {
     int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) + 64;
-    int work_bits = bits + 128;
+    int work_bits = bits + 256; // 增加保护位以提高精度
     int n = static_cast<int>(coeffs.size());
     
     BigFloat one(1, work_bits);

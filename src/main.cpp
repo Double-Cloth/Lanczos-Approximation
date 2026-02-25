@@ -321,12 +321,12 @@ int main(int argc, char* argv[]) {
             size_t e_e_pos = e_str.find('e');
             
             if (c_e_pos != std::string::npos && e_e_pos != std::string::npos) {
-                // 提取指数部分
-                std::string c_exp = c_str.substr(c_e_pos);
-                std::string e_exp = e_str.substr(e_e_pos);
+                // 提取指数部分并转为整数进行比较（避免格式差异如 e+0 vs e+00）
+                int c_exp_val = std::stoi(c_str.substr(c_e_pos + 1));
+                int e_exp_val = std::stoi(e_str.substr(e_e_pos + 1));
                 
                 // 只有在量级（指数）完全相同时，才对比有效数字
-                if (c_exp == e_exp) {
+                if (c_exp_val == e_exp_val) {
                     size_t limit = std::min(c_e_pos, e_e_pos);
                     for (size_t i = 0; i < limit; i++) {
                         if (c_str[i] == e_str[i]) {
