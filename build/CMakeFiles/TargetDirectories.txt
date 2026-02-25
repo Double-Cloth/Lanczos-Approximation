@@ -1,7 +1,0 @@
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/bignum.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/lanczos.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/lanczos_app.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/test_bigfloat.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/test_lanczos.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/edit_cache.dir
-D:/DC/program-projects/C++/Lanczos-Approximation/build/CMakeFiles/rebuild_cache.dir

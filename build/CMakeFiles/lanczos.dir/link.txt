@@ -1,2 +1,0 @@
-D:\ProgramFiles\GreenSoftware\mingw64\bin\ar.exe qc liblanczos.a CMakeFiles/lanczos.dir/src/lanczos.cpp.obj
-D:\ProgramFiles\GreenSoftware\mingw64\bin\ranlib.exe liblanczos.a
