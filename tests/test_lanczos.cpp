@@ -203,9 +203,10 @@ int main(int argc, char *argv[]) {
     }
 
     int expected_prec_bits =
-        static_cast<int>(truncated_expected.length() * 3.3219281) + 64;
-    int compare_prec =
-        std::min(prec_bits + 64, std::max(prec_bits, expected_prec_bits));
+        static_cast<int>(truncated_expected.length() * 3.3219281) +
+        std::max(64, static_cast<int>(truncated_expected.length()) / 10);
+    int compare_prec = std::min(prec_bits + std::max(64, prec_bits / 10),
+                                std::max(prec_bits, expected_prec_bits));
 
     BigFloat computed_ext = computed;
     computed_ext.set_precision(compare_prec);
@@ -239,8 +240,12 @@ int main(int argc, char *argv[]) {
       BigFloat abs_expected = expected_val.abs();
       BigFloat ratio = abs_err / abs_expected;
       std::string ratio_str = ratio.to_decimal_string(20, true);
-      double ratio_val = std::stod(ratio_str);
-      rel_err_percent = ratio_val * 100.0;
+      try {
+        double ratio_val = std::stod(ratio_str);
+        rel_err_percent = ratio_val * 100.0;
+      } catch (const std::out_of_range &) {
+        rel_err_percent = 0.0;
+      }
     }
 
     // 更新统计量

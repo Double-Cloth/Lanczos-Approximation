@@ -95,12 +95,13 @@ BigFloat BigFloat::from_bigint(const BigInt &val, int prec_bits) {
  */
 BigFloat BigFloat::from_fraction(const BigInt &num, const BigInt &den,
                                  int prec_bits) {
-  BigInt shifted = num << (prec_bits + 32); // 多加 32 位保护位
+  int guard = std::max(32, prec_bits / 10);
+  BigInt shifted = num << (prec_bits + guard); // 动态保护位
   auto [q, r] = shifted.divmod(den);
   BigFloat result;
   result.sign_ = false;
   result.mantissa_ = q;
-  result.exponent_ = -(prec_bits + 32);
+  result.exponent_ = -(prec_bits + guard);
   result.precision_bits_ = prec_bits;
   result.normalize();
   return result;
@@ -370,7 +371,8 @@ BigFloat BigFloat::from_string(const std::string &str, int prec_bits) {
   BigInt num(combined);
 
   // --- 转换为二进制浮点 ---
-  int work_prec = prec_bits + 64; // 额外 64 位保护位
+  int guard = std::max(64, prec_bits / 10);
+  int work_prec = prec_bits + guard; // 动态保护位
   BigFloat result = from_bigint(num, work_prec);
 
   // 快速幂计算 5^p（利用二进制分解）
@@ -566,7 +568,8 @@ BigFloat BigFloat::operator/(const BigFloat &other) const {
   int prec = std::max(precision_bits_, other.precision_bits_);
 
   // 为保持精度，先将被除数尾数左移足够多的位
-  int shift = prec + 32;
+  int guard = std::max(32, prec / 10);
+  int shift = prec + guard;
   BigInt num = mantissa_ << shift;
   auto [q, r] = num.divmod(other.mantissa_);
 
@@ -616,11 +619,12 @@ BigFloat BigFloat::div_u32(uint32_t val) const {
   result.sign_ = sign_;
   result.precision_bits_ = precision_bits_;
 
-  // 为保持精度，先将尾数左移 32 位再除
-  BigInt shifted = mantissa_ << 32;
+  // 为保持精度，先将尾数左移一定保护位再除
+  int guard = std::max(32, precision_bits_ / 10);
+  BigInt shifted = mantissa_ << guard;
   auto [q, r] = shifted.divmod_u32(val);
   result.mantissa_ = q;
-  result.exponent_ = exponent_ - 32;
+  result.exponent_ = exponent_ - guard;
   result.normalize();
   return result;
 }
@@ -651,8 +655,9 @@ static BigFloat arctan_recip(int x, int prec_bits) {
     BigFloat term = power.div_u32(static_cast<uint32_t>(2 * k + 1));
 
     // 收敛检查: 当 term 的有效大小远小于精度要求时停止
+    int guard = std::max(16, prec_bits / 10);
     if (term.mantissa().bit_length() + term.exponent() <
-        -static_cast<int64_t>(prec_bits + 16)) {
+        -static_cast<int64_t>(prec_bits + guard)) {
       break;
     }
 
@@ -677,10 +682,12 @@ static BigFloat arctan_recip(int x, int prec_bits) {
  *   可考虑 Chudnovsky 算法。
  */
 BigFloat BigFloat::pi(int prec_bits) {
-  // 用额外 32 位保护位计算
-  BigFloat a = arctan_recip(5, prec_bits + 32);
-  BigFloat b = arctan_recip(239, prec_bits + 32);
-  BigFloat four(4, prec_bits + 32);
+  // 用动态保护位计算
+  int guard = std::max(32, prec_bits / 10);
+  int work_prec = prec_bits + guard;
+  BigFloat a = arctan_recip(5, work_prec);
+  BigFloat b = arctan_recip(239, work_prec);
+  BigFloat four(4, work_prec);
   // π = 4 × (4 × arctan(1/5) − arctan(1/239))
   BigFloat result = (four * a - b) * four;
   result.set_precision(prec_bits);
@@ -714,7 +721,8 @@ BigFloat BigFloat::sqrt(const BigFloat &x) {
     throw std::runtime_error("sqrt of negative number");
 
   int prec = x.precision();
-  int work_prec = prec + 64; // 额外 64 位保护位
+  int guard = std::max(64, prec / 10);
+  int work_prec = prec + guard; // 动态保护位
 
   // --- 初始估计: 使用 double 给出粗略的量级 ---
   int bl = x.mantissa().bit_length();
@@ -753,7 +761,8 @@ BigFloat BigFloat::sqrt(const BigFloat &x) {
         diff.mantissa().bit_length() + static_cast<int>(diff.exponent());
     int guess_bl =
         guess.mantissa().bit_length() + static_cast<int>(guess.exponent());
-    if (guess_bl - diff_bl > prec + 8)
+    int guard = std::max(8, prec / 32);
+    if (guess_bl - diff_bl > prec + guard)
       break;
   }
   guess.set_precision(prec);
@@ -780,7 +789,8 @@ BigFloat BigFloat::sin(const BigFloat &x) {
     return BigFloat(0, x.precision());
 
   int prec = x.precision();
-  int work_prec = prec + 128; // 额外 128 位保护位
+  int guard = std::max(128, prec / 8);
+  int work_prec = prec + guard; // 动态保护位
 
   BigFloat val = x;
   val.set_precision(work_prec);
@@ -822,8 +832,8 @@ BigFloat BigFloat::sin(const BigFloat &x) {
     return BigFloat(0, prec);
 
   // --- 步骤 2: 三倍角降阶缩减 ---
-  // 获取缩小倍率 r，使 t 减至足够小加速泰勒级数收敛
-  int r = std::min(64, std::max(4, prec / 32));
+  // 获取缩小倍率 r，使 t 减至足够小加速泰勒级数收敛（无限拓展）
+  int r = std::max(4, prec / 32);
 
   BigFloat reduced = val;
   for (int i = 0; i < r; i++) {
@@ -902,7 +912,8 @@ BigFloat BigFloat::exp(const BigFloat &x) {
     return BigFloat(1, x.precision());
 
   int prec = x.precision();
-  int work_prec = prec + 128; // 增加保护位以抵消平方累积误差
+  int guard = std::max(128, prec / 8);
+  int work_prec = prec + guard; // 保护位抵消平方累积误差
 
   BigFloat val = x;
   val.set_precision(work_prec);
@@ -989,7 +1000,8 @@ BigFloat BigFloat::ln(const BigFloat &x) {
     throw std::runtime_error("ln of non-positive number");
 
   int prec = x.precision();
-  int work_prec = prec + 128; // 额外 128 位保护位
+  int guard = std::max(128, prec / 8);
+  int work_prec = prec + guard; // 动态保护位
 
   // --- 步骤 1: 范围缩减 ---
   // 分解 x = m × 2^e，使 m ∈ [1, 2)
@@ -1097,7 +1109,8 @@ BigFloat BigFloat::pow(const BigFloat &base, const BigFloat &exponent) {
     return BigFloat(0, base.precision());
 
   int prec = std::max(base.precision(), exponent.precision());
-  int work_prec = prec + 128;
+  int guard = std::max(128, prec / 8);
+  int work_prec = prec + guard;
 
   // --- 检查指数是否为非负整数 ---
   // 条件: exponent ≥ 0 且 exponent_ ≥ 0（没有小数部分）
@@ -1167,7 +1180,8 @@ BigFloat BigFloat::factorial(int n, int prec_bits) {
  *     k = 0: Γ(0.5) = √π ≈ 1.7724538509...
  */
 BigFloat BigFloat::half_factorial(int k, int prec_bits) {
-  int work_prec = prec_bits + 64;
+  int guard = std::max(64, prec_bits / 10);
+  int work_prec = prec_bits + guard;
 
   if (k == 0) {
     // Γ(0.5) = √π

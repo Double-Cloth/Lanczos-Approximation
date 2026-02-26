@@ -120,9 +120,13 @@ struct SignedBigInt {
 std::vector<BigFloat> compute_lanczos_coefficients(int n,
                                                    const std::string &g_str,
                                                    int decimal_digits) {
-  // 将十进制精度转换为二进制位数: bits ≈ digits × log2(10) + 64
-  int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) + 64;
-  int work_bits = bits + 256; // 增加 256 位保护位
+  // 将十进制精度转换为二进制位数
+  int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) +
+             std::max(64, decimal_digits / 10);
+  // 由于项数增加会导致矩阵运算中的阶乘级振荡（灾难性相消）
+  // 保护位需随 n 动态极大增加: 至少需要 2n*log2(2n) 位的额外绝对精度
+  int guard_bits = 256 + static_cast<int>(2.0 * 2 * n * std::log2(2 * n));
+  int work_bits = bits + guard_bits;
 
   // 从字符串构造 g（保持全精度，不经过 double）
   BigFloat bf_g = BigFloat::from_string(g_str, work_bits);
@@ -348,9 +352,12 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
 BigFloat lanczos_gamma(const BigFloat &z, const std::vector<BigFloat> &coeffs,
                        const std::string &g_str, int decimal_digits) {
   // 将十进制精度转换为二进制位数
-  int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) + 64;
-  int work_bits = bits + 256; // 256 位保护位
+  int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) +
+             std::max(64, decimal_digits / 10);
   int n = static_cast<int>(coeffs.size());
+  // 求值时也会根据系数大小有精度衰减，补足对应的保护位
+  int guard_bits = 256 + static_cast<int>(2.0 * n * std::log2(n + 1));
+  int work_bits = bits + guard_bits;
 
   // 构造常用常量
   BigFloat one(1, work_bits);
