@@ -23,8 +23,8 @@ Lanczos-Approximation/
 │   ├── lanczos.cpp            # Godfrey 矩阵方法 + Gamma 函数
 │   └── main.cpp               # 命令行应用
 └── tests/
-    ├── test_bigfloat.cpp      # BigInt/BigFloat 单元测试
-    └── test_lanczos.cpp       # Lanczos 精度验证测试
+    ├── test_bigfloat.cpp      # BigInt/BigFloat 单元测试（相对误差断言）
+    └── test_lanczos.cpp       # Lanczos 精度验证测试（相对误差百分比）
 ```
 
 ## 构建
@@ -56,8 +56,8 @@ cmake --build build
 | 文件 | 说明 |
 |------|------|
 | `lanczos_app` | 主程序 — 计算系数并验证 |
-| `test_bigfloat` | BigInt/BigFloat 单元测试 |
-| `test_lanczos` | Lanczos 精度验证（需 `real_gamma.csv`） |
+| `test_bigfloat` | BigInt/BigFloat 单元测试（含相对误差 % 断言） |
+| `test_lanczos` | Lanczos 精度验证（需 `real_gamma.csv`，相对误差 % 判定） |
 
 ## 使用方法
 
@@ -76,7 +76,7 @@ cmake --build build
 | `g` | 浮点数 | Lanczos 参数 |
 | `digits` | 整数 | 目标精度（十进制有效位数） |
 | `output_dir` | 字符串（可选） | 输出目录名，默认为 `output_n<n>_g<g>_d<digits>` |
-| `csv_path` | 字符串（可选） | 验证数据 CSV 文件路径，默认为 `real_gamma.csv` |
+| `csv_path` | 字符串（可选） | 验证数据 CSV 文件路径，默认为 `../assets/real_gamma.csv` |
 
 #### 模式 2：复用求值模式
 读取之前生成的系数结果（`parameters.txt` 和 `coefficients.txt`），利用已有参数极速对某个任意数值 `z` 求 Gamma 函数值，而无需重新构造大型系数矩阵。
@@ -115,17 +115,19 @@ Loaded 2800 test entries.
 Selected 100 test points (z <= 50).
 
 === Verification ===
-  Gamma(0.5) = 1.7724538508277281e+0  [Error: 7.7787923580e-11, 10 digits, PASS]
-  Gamma(1) = 9.9999999994978583e-1  [Error: 5.0214165577e-11, 10 digits, PASS]
+  Pass threshold: relative error <= 1e-08% (based on 16-digit precision)
+
+  Gamma(0.5) = 1.7724538508277281e+0  [relative error: 4.39e-11%, PASS]
+  Gamma(1) = 9.9999999994978583e-1  [relative error: 5.02e-11%, PASS]
   ...
-  Gamma(50) = 6.0828186401619343e+62  [Error: 3.3248888497e+52, 10 digits, PASS]
+  Gamma(50) = 6.0828186406937170e+62  [relative error: 5.77e-09%, PASS]
 
 === Summary ===
   Total tests:         100
-  Passed (>= 8 digits): 100/100
-  Min matching digits: 9
-  Max matching digits: 12
-  Avg matching digits: 9.95
+  Passed (relative error <= 1e-08%): 100/100
+  Max relative error:  7.24e-28%
+  Min relative error:  0.00e+00%
+  Avg relative error:  7.66e-29%
 ```
 
 #### 2. 双精度 (~22 位有效数字)
@@ -174,34 +176,35 @@ output_n7_g5_d16/
 **coefficients.txt** — 系数文件，包含公式说明和每个系数的值：
 ```
 # Formula:
-#   Gamma(z) = base^(z+0.5) * exp(-base) * S(z)
-#   where base = z + g + 0.5
-#         S(z) = p[0] + sum_{k=1}^{n-1} p[k] / (z + k)
+#   Gamma(z) = (base/e)^(z-0.5) * S(z)
+#   where base = z + g - 0.5
+#         S(z) = p[0] + sum_{k=1}^{n-1} p[k] / (z + k - 1)
 #
 0, 2.5066282751072970e+0
 1, 1.9095517189307640e+2
 ...
 ```
 
-**verification.txt** — 验证结果，包含计算值、期望值、测试状态和匹配位数：
+**verification.txt** — 验证结果，包含计算值、期望值、相对误差和测试状态：
 ```
 # Lanczos Gamma Function Verification Results
 # Parameters: n=7, g=5, digits=16
-# Test data source: real_gamma.csv
+# Test data source: assets/real_gamma.csv
+# Pass threshold: relative error <= 1e-08%
 #
-# z, computed, expected (first 30 digits), absolute_error, matching_digits, status
-0.5, 1.7724538508277281e+0, 1.7724538509055160272981674833..., 7.7787923580e-11, 10, PASS
-1, 9.9999999994978583e-1, 1..., 5.0214165577e-11, 10, PASS
+# z, computed, expected (first 30 digits), relative_error%, status
+0.5, 1.7724538508277281e+0, 1.7724538509055160272981674833..., 4.39e-11%, PASS
+1, 9.9999999994978583e-1, 1..., 5.02e-11%, PASS
 ...
 #
 # ==============================
 # Summary
 # ==============================
 # Total tests:        100
-# Passed (>= 8 digits): 100/100
-# Min matching digits: 9
-# Max matching digits: 12
-# Avg matching digits: 9.93
+# Passed (relative error <= 1e-08%): 100/100
+# Max relative error: 7.24e-28%
+# Min relative error: 0.00e+00%
+# Avg relative error: 7.66e-29%
 ```
 
 ### 推荐参数组合 (来自 Pugh 论文)
@@ -220,12 +223,60 @@ output_n7_g5_d16/
 ### 运行测试
 
 ```bash
-# BigInt/BigFloat 单元测试
+# BigInt/BigFloat 单元测试（使用相对误差百分比断言）
 ./build/test_bigfloat
 
 # Lanczos 精度验证 (需要 real_gamma.csv 文件在工作目录)
+# 默认阈值: 相对误差 ≤ 1e-6% (约 8 位有效数字)
 ./build/test_lanczos
+
+# 自定义参数: test_lanczos [n] [g] [precision] [csv_path] [max_tests] [threshold%]
+./build/test_lanczos 7 5.0 16 real_gamma.csv 50 1e-8
 ```
+
+#### 测试通过标准
+
+所有测试使用 **相对误差百分比** 作为判定标准：
+
+$$\text{relative\_error} = \frac{|\text{computed} - \text{expected}|}{|\text{expected}|} \times 100\%$$
+
+| 测试文件 | 测试类型 | 阈值 | 含义 |
+|---------|---------|------|------|
+| `test_bigfloat` | 基本算术 | ≤ 1e-30% | 应几乎精确 |
+| `test_bigfloat` | 常量（π、√2、e） | ≤ 1e-45% | ~47 位有效数字 |
+| `test_bigfloat` | 复合运算（exp、ln） | ≤ 1e-40% | ~42 位有效数字 |
+| `test_bigfloat` | Γ 函数 | ≤ 1e-30% | ~32 位有效数字 |
+| `test_lanczos` | Gamma 函数验证 | ≤ 1e-6%（默认） | ~8 位有效数字 |
+| `lanczos_app` | CSV 全量验证 | 动态计算 | `10^(-min(digits, n+3) + 2) %` |
+
+## 性能优化
+
+本项目使用了多层次的算法优化来提升计算速度：
+
+### BigInt 层
+| 优化 | 复杂度变化 | 说明 |
+|------|-----------|------|
+| **Karatsuba 乘法** | O(n²) → O(n^1.585) | 操作数 ≥ 32 字（1024 位）时自动启用分治 |
+| **Knuth Algorithm D 除法** | O(n×bitlen) → O(n×m) | 替代逐位二进制长除法，数量级提升 |
+
+### BigFloat 层
+| 优化 | 说明 |
+|------|------|
+| **`div_u32` 快速除法** | 除以小整数（≤ 2^32）时使用 O(n) 单字除法，替代完整 BigFloat 除法 |
+| **exp 泰勒级数优化** | 级数中 `term /= k` 使用 `div_u32(k)` 而非 BigFloat 除法 |
+| **ln(2) 缓存** | 避免每次 ln() 调用都重新计算 atanh(1/3) 级数 |
+| **arctan/atanh 级数优化** | 除以 `(2k+1)` 使用 `div_u32` |
+| **pow 整数提取** | 直接从 BigInt digits 提取整数值，避免 O(n×D) 十进制转换 |
+| **to_decimal 快速幂 5^n** | 使用二进制快速幂替代逐步 `mul_u32(5)` |
+
+### Lanczos 层与测试框架层
+| 优化 | 说明 |
+|------|------|
+| **F[i] 构造常数分离** | Godfrey 方法中将 `e^{-g}` 吸收进系数生成，运行时消除 `exp` |
+| **F[i] exp 复用** | `exp(power_{i+1}) = exp(power_i) × exp(1)`，将降维的高精指数计算进一步递推 |
+| **运行时求值极速化** | 单个 Gamma 以一次大数幂运算 `pow(base/e, z-0.5)` 完成，避开高成本 `exp(-base)` |
+| **pow2 指数调整** | 除以 2^k 改用 `mul_pow2(-k)`（O(1) 指数调整） |
+| **高精验证动态截断** | 根据对比需求在转数字前动态截断 CSV 中 3 万位级别的极限验证数据，避免阻塞瓶颈 |
 
 ## API 接口
 
@@ -278,15 +329,16 @@ $$P = D \times B \times C \times F$$
 - **B** — 由二项式系数构成的矩阵，`B[i][j] = (-1)^{j-i} × C(i+j-1, j-i)`
 - **D** — 对角矩阵，通过递推 `D[i] = D[i-1] × 2(2i-1)/(i-1)` 计算
 - **C** — Chebyshev 系数矩阵，`C[i][j] = (-1)^{i-j} × Σ C(2i,2k)×C(k,k+j-i)`
-- **F** — 包含指数、阶乘和幂函数项的浮点向量
+- **F** — 包含纯量指数、阶乘和幂函数项的浮点向量，其通式已被优化吸收常数 $e^{-g}$：
+  $$F_i = \frac{(2i)!}{i!} \cdot \exp(i+0.5) \cdot \frac{1}{2^{2i-1} (g+i+0.5)^i \sqrt{g+i+0.5}}$$
 
 计算得到系数 `p_0, ..., p_{n-1}` 后，Gamma 函数通过以下公式求值：
 
-$$\Gamma(z) = \left(z + g + \frac{1}{2}\right)^{z + 1/2} \cdot e^{-(z+g+1/2)} \cdot S(z)$$
+$$\Gamma(z) = \left( \frac{z + g - 0.5}{e} \right)^{z - 0.5} \cdot S(z)$$
 
 其中级数部分为：
 
-$$S(z) = p_0 + \sum_{k=1}^{n-1} \frac{p_k}{z + k}$$
+$$S(z) = p_0 + \sum_{k=1}^{n-1} \frac{p_k}{z + k - 1}$$
 
 > **注意：** 本实现中 `√(2π)` 因子已吸收在系数 `p_0` 中，无需额外乘以。
 

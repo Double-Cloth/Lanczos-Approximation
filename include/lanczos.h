@@ -3,14 +3,12 @@
  * @brief Lanczos 近似的系数计算与 Gamma 函数求值
  *
  * @details
- * Lanczos 近似是计算 Gamma 函数的高效方法。其核心公式为:
+ * Lanczos 近似是计算 Gamma 函数的高效方法。其核心公式表示为:
  *
- *   Γ(z+1) = (z + g + 0.5)^(z+0.5) × e^(−(z+g+0.5)) × S(z)
+ *   Γ(z) = ( (z + g - 0.5) / e )^(z-0.5) × S(z)
  *
  * 其中:
- *   S(z) = p₀ + Σ_{k=1}^{n-1} p_k / (z + k)
- *
- * 因此 Γ(z) = Γ(z+1) / z。
+ *   S(z) = p₀ + Σ_{k=1}^{n-1} p_k / (z + k - 1)
  *
  * 系数 p₀, p₁, ..., p_{n-1} 通过 Godfrey 矩阵方法计算:
  *   P = D × B × C × F
@@ -55,7 +53,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
  * @brief 使用 Lanczos 系数估算 Γ(z)
  *
  * 计算公式:
- *   Γ(z) = (z+g+0.5)^(z+0.5) × e^(−(z+g+0.5)) × S(z) / z
+ *   Γ(z) = ( (z+g-0.5) / e )^(z-0.5) × S(z)
  *
  * @param z              自变量（z > 0.5，因为未实现反射公式）
  * @param coeffs         由 compute_lanczos_coefficients 生成的系数列表
