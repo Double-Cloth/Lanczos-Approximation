@@ -262,7 +262,7 @@ output_n7_g5_d16/
 
 所有测试使用 **相对误差百分比** 作为判定标准：
 
-$$\text{relative_error} = \frac{|\text{computed} - \text{expected}|}{|\text{expected}|} \times 100\%$$
+$$\text{relative error} = \frac{|\text{computed} - \text{expected}|}{|\text{expected}|}$$
 
 | 测试文件 | 测试类型 | 阈值 | 含义 |
 |---------|---------|------|------|
