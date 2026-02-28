@@ -134,11 +134,27 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
             << " decimal_digits=" << decimal_digits << " binary_bits=" << bits
             << std::endl;
 
+  // 进度条辅助函数
+  auto print_prog = [&](const char *name, int i) {
+    int current = i + 1;
+    int progress = (current * 100) / n;
+    int bar_pos = (50 * current) / n;
+    std::cout << "\r[lanczos] " << name << " [";
+    for (int p = 0; p < 50; ++p) {
+      if (p < bar_pos)
+        std::cout << "=";
+      else if (p == bar_pos)
+        std::cout << ">";
+      else
+        std::cout << " ";
+    }
+    std::cout << "] " << progress << "% (" << current << "/" << n << ")"
+              << std::flush;
+    if (current == n)
+      std::cout << std::endl;
+  };
+
   // ========== 步骤 1: 构造矩阵 B (n × n) ==========
-  // B[0][j] = 1                                 (第一行全为 1)
-  // B[i][j] = 0                   if j < i      (下三角为 0，i > 0)
-  // B[i][j] = (−1)^(j−i) × C(i+j−1, j−i)  if j ≥ i, i > 0
-  std::cout << "[lanczos] Constructing matrix B..." << std::endl;
   std::vector<std::vector<SignedBigInt>> B(n, std::vector<SignedBigInt>(n));
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
@@ -152,15 +168,10 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
         B[i][j] = {BigInt(0), false}; // 下三角为 0
       }
     }
+    print_prog("Matrix B", i);
   }
 
   // ========== 步骤 2: 构造 Chebyshev 矩阵 C (n × n) ==========
-  // C[0][0] = 0.5       (唯一的非整数元素)
-  // C[i][j] = 0         if j > i (上三角为 0)
-  // C[i][j] = (−1)^(i−j) × Σ_{k=0}^{i} C(2i,2k) × C(k, k+j−i)
-  //
-  // 由于 C[0][0] = 0.5 是分数，使用 BigFloat 矩阵存储
-  std::cout << "[lanczos] Constructing Chebyshev matrix C..." << std::endl;
   std::vector<std::vector<BigFloat>> Cmat(
       n, std::vector<BigFloat>(n, BigFloat(0, work_bits)));
   for (int i = 0; i < n; i++) {
@@ -184,16 +195,10 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
         Cmat[i][j] = bf_sum;
       }
     }
+    print_prog("Matrix C", i);
   }
 
   // ========== 步骤 3: 构造对角矩阵 D (n × n) ==========
-  // D[0] = 1
-  // D[1] = −1
-  // D[i] = D[i−1] × 2(2i−1) / (i−1)   (i ≥ 2)
-  //
-  // D 序列的前几项: 1, −1, −6, −30, −140, ...
-  // 绝对值快速增长
-  std::cout << "[lanczos] Constructing matrix D..." << std::endl;
   std::vector<BigFloat> D(n, BigFloat(0, work_bits));
   D[0] = BigFloat(1, work_bits);
   if (n > 1) {
@@ -203,6 +208,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     // D[i] = D[i−1] × 2(2i−1) / (i−1)
     D[i] = D[i - 1] * BigFloat(2 * (2 * i - 1), work_bits);
     D[i] = D[i] / BigFloat(i - 1, work_bits);
+    print_prog("Matrix D", i);
   }
 
   // ========== 步骤 4: 计算 M = D × B × C ==========
@@ -227,6 +233,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
       }
       BC[i][j] = sum;
     }
+    print_prog("Matrix BC", i);
   }
 
   // M[i][j] = D[i] × BC[i][j]
@@ -236,18 +243,10 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     for (int j = 0; j < n; j++) {
       M[i][j] = D[i] * BC[i][j];
     }
+    print_prog("Matrix M", i);
   }
 
   // ========== 步骤 5: 构造向量 F (高精度浮点) ==========
-  // F[i] = (2i)!/i! × exp(i+0.5) / 2^(2i−1) / (g+i+0.5)^i / √(g+i+0.5)
-  //
-  // 各因子含义:
-  //   (2i)!/i!        : 阶乘比（中心二项式系数的一半）
-  //   exp(i+0.5)      : 新结构分离出的指数项，不含 g（吸收 e^-g 到系数中）
-  //   1/2^(2i−1)      : 归一化因子
-  //   1/(g+i+0.5)^i   : 基底的幂次
-  //   1/√(g+i+0.5)    : 半整数幂的修正
-  std::cout << "[lanczos] Constructing vector F..." << std::endl;
 
   BigFloat bf_half = BigFloat(1, work_bits) / BigFloat(2, work_bits);
 
@@ -311,13 +310,10 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     F[i] = F[i].mul_pow2(pow2_shift); // 高效乘除 2 的幂
     F[i] = F[i] / base_pow_i;
     F[i] = F[i] / base_sqrt;
-
-    std::cout << "  F[" << i << "] computed" << std::endl;
+    print_prog("Vector F", i);
   }
 
   // ========== 步骤 6: 计算 P = M × F (矩阵-向量乘法) ==========
-  // P[i] = Σ_j M[i][j] × F[j]
-  std::cout << "[lanczos] Computing P = M * F..." << std::endl;
   std::vector<BigFloat> P(n);
   for (int i = 0; i < n; i++) {
     BigFloat sum(0, work_bits);
@@ -326,6 +322,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     }
     P[i] = sum;
     P[i].set_precision(bits); // 截断到目标精度
+    print_prog("Vector P", i);
   }
 
   std::cout << "[lanczos] Coefficients computed successfully." << std::endl;

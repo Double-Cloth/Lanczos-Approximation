@@ -44,10 +44,9 @@ Lanczos-Approximation/
 │   ├── BigInt.cpp             # BigInt 实现
 │   ├── BigFloat.cpp           # BigFloat 实现 (含 pi, sqrt, exp, ln, pow 等)
 │   ├── lanczos.cpp            # Godfrey 矩阵方法 + Gamma 函数
-│   └── main.cpp               # 命令行应用
+│   └── main.cpp               # 命令行应用 (包含 Generate/Eval/Test 并归合验证核心)
 └── tests/
-    ├── test_bigfloat.cpp      # BigInt/BigFloat 单元测试（相对误差断言）
-    └── test_lanczos.cpp       # Lanczos 精度验证测试（相对误差百分比）
+    └── test_bigfloat.cpp      # BigInt/BigFloat 单元测试（极高精度相对误差断言）
 ```
 
 ## 构建
@@ -74,19 +73,18 @@ cmake -B build -G "Visual Studio 17 2022"
 cmake --build build
 ```
 
-编译成功后会在 `build/` 目录下生成三个可执行文件：
+编译成功后会在 `build/` 目录下生成可执行文件：
 
 | 文件 | 说明 |
 |------|------|
-| `lanczos_app` | 主程序 — 计算系数并验证 |
-| `test_bigfloat` | BigInt/BigFloat 单元测试（含相对误差 % 断言） |
-| `test_lanczos` | Lanczos 精度验证（需 `real_gamma.csv`，相对误差 % 判定） |
+| `lanczos_app` | 主程序 — 计算系数、高精求值、以及批量数据精度验证 |
+| `test_bigfloat` | BigInt/BigFloat 单元底层数学能力测试（纯误差 % 严格断言） |
 
 ## 使用方法
 
 ### 命令行参数
 
-程序目前提供两种运行模式：
+程序提供三种运行模式：
 
 #### 模式 1：生成验证模式
 计算 Lanczos 系数并运行全量比较验证。
@@ -112,6 +110,21 @@ cmake --build build
 | `output_dir` | 字符串 | 包含已计算好所需系数与参数文件的目录路径 |
 | `z_value` | 浮点数 | 要求取 Gamma 函数的具体 `z` 值 |
 | `display_digits` | 整数（可选） | 动态指定当前单次估算的输出十进制显示精度 |
+
+#### 模式 3：测试与验证模式
+读取已知 Gamma 函数精确值的 CSV 文件，在控制台打印并生成进度条，直接对批量数据运行动态断言并展示绝对与相对误差总结。
+```bash
+./build/lanczos_app test <n> <g> <digits> [csv_path] [max_tests] [threshold%]
+```
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `test` | 关键字 | 激活测试模式 |
+| `n` | 整数 | 系数个数（级数项数） |
+| `g` | 浮点数 | Lanczos 参数 |
+| `digits` | 整数 | 目标精度（十进制有效位数） |
+| `csv_path` | 字符串（可选） | 验证数据 CSV 文件路径，默认为 `../assets/real_gamma.csv` |
+| `max_tests` | 整数（可选） | 读取文件验证的行数限制，默认 `50` |
+| `threshold%`| 字符串（可选） | 及格的相对误差比重，默认 `1e-6` |
 
 ### 示例
 
@@ -250,12 +263,9 @@ output_n7_g5_d16/
 # BigInt/BigFloat 单元测试（使用相对误差百分比断言）
 ./build/test_bigfloat
 
-# Lanczos 精度验证 (需要 real_gamma.csv 文件在工作目录)
-# 默认阈值: 相对误差 ≤ 1e-6% (约 8 位有效数字)
-./build/test_lanczos
-
-# 自定义参数: test_lanczos [n] [g] [precision] [csv_path] [max_tests] [threshold%]
-./build/test_lanczos 7 5.0 16 real_gamma.csv 50 1e-8
+# Lanczos 精度验证模式 (需要 real_gamma.csv 文件在工作目录)
+# 参数格式: lanczos_app test [n] [g] [precision] [csv_path] [max_tests] [threshold%]
+./build/lanczos_app test 7 5.0 16 ../assets/real_gamma.csv 50 1e-8
 ```
 
 #### 测试通过标准
@@ -270,8 +280,8 @@ $$\text{relative error} = \frac{|\text{computed} - \text{expected}|}{|\text{expe
 | `test_bigfloat` | 常量（π、√2、e） | ≤ 1e-45% | ~47 位有效数字 |
 | `test_bigfloat` | 复合运算（exp、ln） | ≤ 1e-40% | ~42 位有效数字 |
 | `test_bigfloat` | Γ 函数 | ≤ 1e-30% | ~32 位有效数字 |
-| `test_lanczos` | Gamma 函数验证 | ≤ 1e-6%（默认） | ~8 位有效数字 |
-| `lanczos_app` | CSV 全量验证 | 动态计算 | `10^(-min(digits, n+3) + 2) %` |
+| `lanczos_app` test 模式 | Gamma 函数轻量化验证 | 用户指定（默认 1e-6%） | ~8 位有效数字 |
+| `lanczos_app` 生成模式 | CSV 全量输出验证 | 动态自动计算 | `10^(-min(digits, n+3) + 2) %` |
 
 ## 性能优化
 

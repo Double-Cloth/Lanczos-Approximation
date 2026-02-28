@@ -32,25 +32,20 @@
  *
  * @details 计算公式: |computed - expected| / |expected| × 100%
  *   若 expected 为零，则 computed 也必须为零才算通过。
- *   通过将差值和期望值都转为高精度十进制字符串，
- *   再用 double 计算比值来得到百分比。
+ *   返回 BigFloat 对象表示百分比。
  */
-double relative_error_percent(const BigFloat &computed,
-                              const BigFloat &expected) {
+BigFloat relative_error_percent(const BigFloat &computed,
+                                const BigFloat &expected) {
   BigFloat diff = (computed - expected).abs();
+  int prec = std::max(computed.precision(), expected.precision());
 
   if (expected.is_zero()) {
-    return computed.is_zero() ? 0.0 : 100.0;
+    return computed.is_zero() ? BigFloat(0, prec) : BigFloat(100, prec);
   }
 
-  // 使用足够多的有效数字来精确计算误差比值
-  // 将 diff / |expected| 转换为十进制字符串再解析为 double
   BigFloat abs_expected = expected.abs();
   BigFloat ratio = diff / abs_expected;
-  std::string ratio_str = ratio.to_decimal_string(20, true);
-  double ratio_val = std::stod(ratio_str);
-
-  return ratio_val * 100.0;
+  return ratio * BigFloat(100, prec);
 }
 
 /**
@@ -66,13 +61,21 @@ double relative_error_percent(const BigFloat &computed,
  *   ✗ test_name: 相对误差 = x.xxe-yy% (> 阈值%) [FAIL]
  */
 bool check_relative_error(const BigFloat &computed, const BigFloat &expected,
-                          double max_percent, const std::string &test_name) {
-  double err = relative_error_percent(computed, expected);
+                          const char *max_percent_str,
+                          const std::string &test_name) {
+  BigFloat err = relative_error_percent(computed, expected);
+  int prec = std::max(computed.precision(), expected.precision());
+  BigFloat max_percent = BigFloat::from_string(max_percent_str, prec);
   bool pass = (err <= max_percent);
 
-  std::cout << "  " << (pass ? "[PASS]" : "[FAIL]") << " " << test_name
-            << ": relative error = " << std::scientific << err << "%"
-            << " (threshold: " << max_percent << "%)" << std::defaultfloat
+  BigFloat abs_err = (computed - expected).abs();
+  std::cout << "  " << test_name << ":" << std::endl
+            << "    computed = " << computed.to_decimal_string(15, true)
+            << std::endl
+            << "    expected = " << expected.to_decimal_string(15, true)
+            << std::endl
+            << "    abs error = " << abs_err.to_decimal_string(6, true)
+            << ", rel error = " << err.to_decimal_string(6, true) << "%"
             << std::endl;
 
   return pass;
@@ -151,25 +154,25 @@ bool test_bigfloat_arithmetic() {
   BigFloat c = a + b;
   BigFloat expected_sum(7, prec);
   std::cout << "  computed: 3 + 4 = " << c.to_decimal_string(10) << std::endl;
-  all_pass &= check_relative_error(c, expected_sum, 1e-30, "3 + 4 = 7");
+  all_pass &= check_relative_error(c, expected_sum, "1e-30", "3 + 4 = 7");
 
   // 减法: 7 - 4 = 3
   BigFloat sub_result = c - b;
   std::cout << "  computed: 7 - 4 = " << sub_result.to_decimal_string(10)
             << std::endl;
-  all_pass &= check_relative_error(sub_result, a, 1e-30, "7 - 4 = 3");
+  all_pass &= check_relative_error(sub_result, a, "1e-30", "7 - 4 = 3");
 
   // 乘法: 3 * 4 = 12
   BigFloat d = a * b;
   BigFloat expected_prod(12, prec);
   std::cout << "  computed: 3 * 4 = " << d.to_decimal_string(10) << std::endl;
-  all_pass &= check_relative_error(d, expected_prod, 1e-30, "3 * 4 = 12");
+  all_pass &= check_relative_error(d, expected_prod, "1e-30", "3 * 4 = 12");
 
   // 除法: 3 / 4 = 0.75
   BigFloat e = a / b;
-  BigFloat expected_div(0.75, prec);
+  BigFloat expected_div = BigFloat::from_string("0.75", prec);
   std::cout << "  computed: 3 / 4 = " << e.to_decimal_string(20) << std::endl;
-  all_pass &= check_relative_error(e, expected_div, 1e-30, "3 / 4 = 0.75");
+  all_pass &= check_relative_error(e, expected_div, "1e-30", "3 / 4 = 0.75");
 
   // 除法: 1 / 3 = 0.333...（无限循环小数，验证 * 3 ≈ 1）
   BigFloat one(1, prec);
@@ -181,7 +184,8 @@ bool test_bigfloat_arithmetic() {
   std::cout << "  computed: (1/3) * 3 = " << reconstructed.to_decimal_string(40)
             << std::endl;
   // 循环小数允许更宽松的误差: 1e-25%（约 27 位有效数字）
-  all_pass &= check_relative_error(reconstructed, one, 1e-25, "(1/3) * 3 ≈ 1");
+  all_pass &=
+      check_relative_error(reconstructed, one, "1e-25", "(1/3) * 3 ≈ 1");
 
   assert(all_pass);
   return all_pass;
@@ -225,7 +229,7 @@ bool test_bigfloat_math() {
       << std::endl;
   BigFloat pi_expected = BigFloat::from_string(
       "3.14159265358979323846264338327950288419716939937510", prec);
-  all_pass &= check_relative_error(pi_val, pi_expected, 1e-45, "pi");
+  all_pass &= check_relative_error(pi_val, pi_expected, "1e-45", "pi");
 
   // --- √2 ---
   std::cout << "  Computing sqrt(2)..." << std::endl;
@@ -237,7 +241,7 @@ bool test_bigfloat_math() {
       << std::endl;
   BigFloat sqrt2_expected = BigFloat::from_string(
       "1.41421356237309504880168872420969807856967187537694", prec);
-  all_pass &= check_relative_error(sqrt2, sqrt2_expected, 1e-45, "sqrt(2)");
+  all_pass &= check_relative_error(sqrt2, sqrt2_expected, "1e-45", "sqrt(2)");
 
   // --- e ---
   std::cout << "  Computing e..." << std::endl;
@@ -248,19 +252,19 @@ bool test_bigfloat_math() {
       << std::endl;
   BigFloat e_expected = BigFloat::from_string(
       "2.71828182845904523536028747135266249775724709369995", prec);
-  all_pass &= check_relative_error(e_val, e_expected, 1e-45, "e");
+  all_pass &= check_relative_error(e_val, e_expected, "1e-45", "e");
 
   // --- exp(1) = e（交叉验证） ---
   BigFloat one(1, prec);
   BigFloat exp1 = BigFloat::exp(one);
   std::cout << "  exp(1)   = " << exp1.to_decimal_string(50) << std::endl;
-  all_pass &= check_relative_error(exp1, e_expected, 1e-40, "exp(1) = e");
+  all_pass &= check_relative_error(exp1, e_expected, "1e-40", "exp(1) = e");
 
   // --- ln(e) = 1（对数验证） ---
   std::cout << "  Computing ln(e)..." << std::endl;
   BigFloat ln_e = BigFloat::ln(e_val);
   std::cout << "  ln(e)    = " << ln_e.to_decimal_string(50) << std::endl;
-  all_pass &= check_relative_error(ln_e, one, 1e-40, "ln(e) = 1");
+  all_pass &= check_relative_error(ln_e, one, "1e-40", "ln(e) = 1");
 
   // --- √π ---
   std::cout << "  Computing sqrt(pi)..." << std::endl;
@@ -272,7 +276,7 @@ bool test_bigfloat_math() {
   BigFloat sqrt_pi_expected = BigFloat::from_string(
       "1.77245385090551602729816748334114518279754945612238", prec);
   all_pass &=
-      check_relative_error(sqrt_pi, sqrt_pi_expected, 1e-45, "sqrt(pi)");
+      check_relative_error(sqrt_pi, sqrt_pi_expected, "1e-45", "sqrt(pi)");
 
   // --- Γ(0.5) = √π ---
   // 通过 half_factorial(0) 计算 (−0.5)! = Γ(0.5)
@@ -280,14 +284,14 @@ bool test_bigfloat_math() {
   BigFloat gamma_half = BigFloat::half_factorial(0, prec);
   std::cout << "  Gamma(0.5) = " << gamma_half.to_decimal_string(50)
             << std::endl;
-  all_pass &= check_relative_error(gamma_half, sqrt_pi_expected, 1e-30,
+  all_pass &= check_relative_error(gamma_half, sqrt_pi_expected, "1e-30",
                                    "Gamma(0.5) = sqrt(pi)");
 
   // --- 5! = 120 ---
   BigFloat f5 = BigFloat::factorial(5, prec);
   BigFloat expected_f5(120, prec);
   std::cout << "  5!       = " << f5.to_decimal_string(5) << std::endl;
-  all_pass &= check_relative_error(f5, expected_f5, 1e-45, "5! = 120");
+  all_pass &= check_relative_error(f5, expected_f5, "1e-45", "5! = 120");
 
   assert(all_pass);
   return all_pass;

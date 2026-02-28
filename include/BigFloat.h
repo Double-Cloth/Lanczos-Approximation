@@ -52,13 +52,7 @@ public:
      */
     BigFloat(int64_t val, int prec_bits = 256);
 
-    /**
-     * @brief 从 double 构造
-     * @param val    双精度浮点数
-     * @param prec_bits 目标精度
-     * @details 使用 frexp 分解 double 为尾数和指数，保留 53 位精度
-     */
-    BigFloat(double val, int prec_bits = 256);
+
 
     /**
      * @brief 从分数 num/den 构造高精度浮点数

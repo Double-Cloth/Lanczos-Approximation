@@ -50,7 +50,3 @@ target_link_libraries(lanczos_app PRIVATE lanczos)
 # --- 测试: BigInt/BigFloat 单元测试 ---
 add_executable(test_bigfloat tests/test_bigfloat.cpp)
 target_link_libraries(test_bigfloat PRIVATE bignum)
-
-# --- 测试: Lanczos 近似精度验证 ---
-add_executable(test_lanczos tests/test_lanczos.cpp)
-target_link_libraries(test_lanczos PRIVATE lanczos)
