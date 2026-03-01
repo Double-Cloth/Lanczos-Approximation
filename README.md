@@ -298,7 +298,7 @@ $$\text{relative error} = \frac{|\text{computed} - \text{expected}|}{|\text{expe
 | **OpenMP 多核矩阵提速** | 彻底利用现代 CPU 多核心阵列。对于 O(N^3) 级矩阵 M, B, C, BC 的构建与结合执行分配 `#pragma omp parallel for`，百倍释放系统多核威力。 |
 | **OS 资源枯竭保护盾** | 深度探针动态侦测 CPU 逻辑总核数 `omp_get_num_procs`，主动为 8 线程以上操作系统截留并保留 2 核心系统开销余地，彻底断绝电脑假死与鼠标卡顿危机。 |
 | **组合数 (comb) 无锁静态缓存** | 构筑二维矩阵内存池静态存储阶乘结果，直接将 C 与 B 矩阵内占据 40% 时间的组合数倒算剔除，改判为 O(1) 短路读取。 |
-| **F[i] 构造常数分离** | Godfrey 方法中将 `e^{-g}` 吸收进系数生成，运行时消除 `exp` |
+| **F[i] 构造常数分离** | Godfrey 方法中将 $e^{-g}$ 吸收进系数生成，运行时消除 `exp` |
 | **F[i] 底数剥解法剔除 exp** | 通过基础底数数学合并提取 `exp(0.5)` 作为纯量常数，使每一段循环内的天文级 `BigFloat::exp` 演算剥解降级成为多线程安全常数积。 |
 | **pow2 指数调整** | 除以 2^k 改用 `mul_pow2(-k)`（O(1) 指数调整） |
 | **高精算力引擎钟表** | 在 `lanczos.cpp` 的核心与 `main.cpp` 的批量断言挂载极其精准的 `std::chrono::high_resolution_clock` 获取纳秒级耗时监控展示。 |
@@ -332,7 +332,7 @@ std::cout << result.to_decimal_string(20) << std::endl;
 
 int prec = 512;  // 512 位精度 (~154 位十进制)
 
-BigFloat pi_val  = BigFloat::pi(prec);           // π
+BigFloat pi_val  = BigFloat::pi(prec);                 // π
 BigFloat sqrt2   = BigFloat::sqrt(BigFloat(2, prec));  // √2
 BigFloat e_val   = BigFloat::exp(BigFloat(1, prec));   // e
 BigFloat ln2     = BigFloat::ln(BigFloat(2, prec));    // ln(2)
@@ -350,7 +350,7 @@ std::cout << pi_val.to_decimal_string(50) << std::endl;
 
 ### 1. 任意精度算术基石 (BigFloat Engine)
 完全摆脱 `double` 类型的 IEEE-754 定长限制。
-* 内部所有常数（$\pi, e, \sqrt{2}, \ln2$）与数学运算（幂，指数，三角）均无硬编码位数。
+* 内部所有常数（ $\pi, e, \sqrt{2}, \ln2$ ）与数学运算（幂，指数，三角）均无硬编码位数。
 * **高精底层架构**: 采用多字无符号 `BigInt` 结合二阶动态指数构建极为灵活的 `BigFloat` 大数系统。
 
 ### 2. 经典 Lanczos 逼近与公式推导
@@ -380,7 +380,7 @@ $$\Gamma(z) = \left( \frac{z + g - 0.5}{e} \right)^{z - 0.5} \cdot \left( p_0 + 
 ### 4. 高精度数值抗性与误差全量清剿 (Numerical Robustness)
 由于级数矩阵相乘引发的抵消甚至能超过 $10^{300}$ 的标度。一旦失去保护，纯粹的灾难性相消能瞬间吞噬二三百位的十进制精度！
 本项目搭载了以下标准数值分析防护壁垒：
-1. **动态防护垫**: 随着输入项数增加而触发计算：$Guard\_Bits = 2n \log_2(2n) + 256$，保护所有底层寄存边界。
+1. **动态防护垫**: 随着输入项数增加而触发计算： $Guard Bits = 2n \log_2(2n) + 256$ ，保护所有底层寄存边界。
 2. **多项式 Kahan 补偿求和**: 级数项 $S(z)$ 的连加启用了 `c = (t - S) - y` 补档变量精准捕捉十进制深处的截断损耗值。
 3. **指数幂完全拆解**: 凡应对底数非整次求幂，引擎会将次幂强制拉断为独立的整数无损快幂与纯小数的次幂，严格截停指数函数的精度放量。
 4. **反射公式与 Payne-Hanek 动态模降**: 在负实轴发散区 $z < 0.5$：自动切换至拉马努金反射恒等式 $\frac{\pi}{\sin(\pi z)}$ 维系。一旦侦测到底层输入了非对称极限大数供向 $\sin$ 时，动态分配巨额精度的 $\pi$ 确保正弦映射严格闭敛于纯净域 $[0, \pi/2]$。
