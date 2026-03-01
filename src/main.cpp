@@ -501,7 +501,8 @@ int main(int argc, char *argv[]) {
     std::cerr << "  Mode 1 (Generate): " << argv[0]
               << " <n> <g> <digits> [--out dir] [--csv path]" << std::endl;
     std::cerr << "  Mode 2 (Evaluate): " << argv[0]
-              << " eval <output_dir> <z_value> [display_digits]" << std::endl;
+              << " eval <output_dir_or_file> <z_value> [display_digits]"
+              << std::endl;
     std::cerr << "  Mode 3 (Test):     " << argv[0] << "  " << argv[0]
               << " test <n> <g> <digits> [--csv path] [--max N] [--start row] "
                  "[--random] [--threshold %]"
@@ -511,6 +512,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "  " << argv[0] << " 7 5.0 16" << std::endl;
     std::cerr << "  " << argv[0] << " eval output_n7_g5.0_d16 50.5"
               << std::endl;
+    std::cerr << "  " << argv[0] << " eval \"coef_file.txt\" 50.5" << std::endl;
     std::cerr << "  " << argv[0] << " test 7 5.0 16 --max 50 --random"
               << std::endl;
     std::cerr << "  " << argv[0] << " test 7 5.0 16 --start 100 --max 5"
@@ -522,8 +524,9 @@ int main(int argc, char *argv[]) {
   std::string mode_flag = argv[1];
   if (mode_flag == "eval") {
     if (argc < 4) {
-      std::cerr << "Error: 'eval' mode requires <output_dir> and <z_value>."
-                << std::endl;
+      std::cerr
+          << "Error: 'eval' mode requires <output_dir_or_file> and <z_value>."
+          << std::endl;
       return 1;
     }
     std::string output_dir = argv[2];
@@ -535,33 +538,113 @@ int main(int argc, char *argv[]) {
       custom_display_digits = std::atoi(argv[4]);
     }
 
-    // --- 读取参数文件 ---
-    std::string params_path = output_dir + "/parameters.txt";
-    std::string coeff_path = output_dir + "/coefficients.txt";
-
-    std::ifstream fparams(params_path);
-    if (!fparams.is_open()) {
-      std::cerr << "Error: cannot open " << params_path << std::endl;
-      return 1;
-    }
-
-    int n = 0, digits = 0;
+    // --- 读取参数文件与系数文件 ---
+    int n = 0, digits = 0, file_prec_bits = 0;
     std::string g_str;
+    std::vector<std::string> coeff_strs;
     std::string line;
-    while (std::getline(fparams, line)) {
-      // 解析 "key = value" 格式
-      if (line.find("n = ") == 0)
-        n = std::stoi(line.substr(4));
-      else if (line.find("g = ") == 0)
-        g_str = line.substr(4);
-      else if (line.find("precision_decimal_digits = ") == 0)
-        digits = std::stoi(line.substr(27));
+
+    bool is_dir = false;
+    {
+      std::ifstream fparams_check(output_dir + "/parameters.txt");
+      if (fparams_check.is_open()) {
+        is_dir = true;
+      }
     }
-    fparams.close();
+
+    if (!is_dir) {
+      std::ifstream fin(output_dir);
+      if (!fin.is_open()) {
+        std::cerr << "Error: cannot open file or directory " << output_dir
+                  << std::endl;
+        return 1;
+      }
+      bool in_state = false, in_coef = false;
+      while (std::getline(fin, line)) {
+        if (!line.empty() && line.back() == '\r')
+          line.pop_back();
+        if (line.find("state") == 0) {
+          in_state = true;
+          in_coef = false;
+          continue;
+        } else if (line.find("approx coef") == 0) {
+          in_state = false;
+          in_coef = true;
+          continue;
+        } else if (line.find("approx result") == 0) {
+          in_state = false;
+          in_coef = false;
+          break;
+        }
+
+        if (in_state) {
+          if (line.find("  N=") == 0)
+            n = std::stoi(line.substr(4));
+          else if (line.find("  g=") == 0)
+            g_str = line.substr(4);
+          else if (line.find("  bits=") == 0) {
+            file_prec_bits = std::stoi(line.substr(7));
+            digits = std::max(1, static_cast<int>(file_prec_bits / 3.3219281));
+          }
+        } else if (in_coef) {
+          if (line.length() > 2 && line[0] == ' ' && line[1] == ' ') {
+            char first_char = line[2];
+            if (first_char == '-' || std::isdigit(first_char) ||
+                first_char == '+') {
+              coeff_strs.push_back(line.substr(2));
+            }
+          }
+        }
+      }
+    } else {
+      std::string params_path = output_dir + "/parameters.txt";
+      std::string coeff_path = output_dir + "/coefficients.txt";
+
+      std::ifstream fparams(params_path);
+      if (!fparams.is_open()) {
+        std::cerr << "Error: cannot open " << params_path << std::endl;
+        return 1;
+      }
+
+      while (std::getline(fparams, line)) {
+        if (!line.empty() && line.back() == '\r')
+          line.pop_back();
+        // 解析 "key = value" 格式
+        if (line.find("n = ") == 0)
+          n = std::stoi(line.substr(4));
+        else if (line.find("g = ") == 0)
+          g_str = line.substr(4);
+        else if (line.find("precision_decimal_digits = ") == 0)
+          digits = std::stoi(line.substr(27));
+      }
+      fparams.close();
+
+      std::ifstream fcoeffs(coeff_path);
+      if (fcoeffs.is_open()) {
+        while (std::getline(fcoeffs, line)) {
+          if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+          if (line.empty() || line[0] == '#')
+            continue; // 跳过注释行
+          size_t comma_pos = line.find(',');
+          if (comma_pos != std::string::npos) {
+            std::string val_str = line.substr(comma_pos + 1);
+            size_t first_non_space = val_str.find_first_not_of(" \t");
+            if (first_non_space != std::string::npos) {
+              val_str = val_str.substr(first_non_space);
+            }
+            coeff_strs.push_back(val_str);
+          }
+        }
+        fcoeffs.close();
+      } else {
+        std::cerr << "Error: cannot open " << coeff_path << std::endl;
+        return 1;
+      }
+    }
 
     if (n <= 0 || digits <= 0) {
-      std::cerr << "Error: invalid parameters found in " << params_path
-                << std::endl;
+      std::cerr << "Error: invalid or missing parameters found." << std::endl;
       return 1;
     }
 
@@ -572,36 +655,27 @@ int main(int argc, char *argv[]) {
     // 确定工作精度（取 digits 和 display_digits 的较大值）
     int work_digits = std::max(digits, display_digits);
     int prec_bits = static_cast<int>(std::ceil(work_digits * 3.3219281)) + 64;
+    // 如果是文件模式，优先使用文件中指定的 bits
+    if (file_prec_bits > 0 && file_prec_bits > prec_bits) {
+      prec_bits = file_prec_bits;
+    }
 
-    // --- 读取系数文件 ---
+    // 解析系数
     std::vector<BigFloat> coeffs;
-    std::ifstream fcoeffs(coeff_path);
-    if (!fcoeffs.is_open()) {
-      std::cerr << "Error: cannot open " << coeff_path << std::endl;
-      return 1;
+    for (const auto &val_str : coeff_strs) {
+      coeffs.push_back(BigFloat::from_string(val_str, prec_bits));
     }
-
-    while (std::getline(fcoeffs, line)) {
-      if (line.empty() || line[0] == '#')
-        continue; // 跳过注释行
-      size_t comma_pos = line.find(',');
-      if (comma_pos != std::string::npos) {
-        // 提取逗号后的系数值
-        std::string val_str = line.substr(comma_pos + 1);
-        size_t first_non_space = val_str.find_first_not_of(" \t");
-        if (first_non_space != std::string::npos) {
-          val_str = val_str.substr(first_non_space);
-        }
-        coeffs.push_back(BigFloat::from_string(val_str, prec_bits));
-      }
-    }
-    fcoeffs.close();
 
     // 验证系数数量
     if (coeffs.size() != static_cast<size_t>(n)) {
-      std::cerr << "Error: expected " << n << " coefficients, but found "
-                << coeffs.size() << std::endl;
-      return 1;
+      if (!is_dir) {
+        // 对于单文件导入，如果 N 和实际系数个数不一致，以实际系数个数为准
+        n = coeffs.size();
+      } else {
+        std::cerr << "Error: expected " << n << " coefficients, but found "
+                  << coeffs.size() << std::endl;
+        return 1;
+      }
     }
 
     // --- 计算并输出 Γ(z) ---

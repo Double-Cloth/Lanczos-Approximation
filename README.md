@@ -71,14 +71,14 @@ cmake --build build
 | `--csv` | 字符串 | (可选) 指定验证目标文件，默认 `../assets/real_gamma.csv` |
 
 #### 模式 2：复用求值模式
-读取之前生成的系数结果（`parameters.txt` 和 `coefficients.txt`），利用已有参数极速对某个任意数值 `z` 求 Gamma 函数值，而无需重新构造大型系数矩阵。
+读取之前生成的系数结果（如 `parameters.txt` 和 `coefficients.txt` 的输出目录），或者**直接读取包含系数状态的单文本文件**，利用已有参数极速对某个任意数值 `z` 求 Gamma 函数值，而无需重新构造大型系数矩阵。
 ```bash
-./build/lanczos_app eval <output_dir> <z_value> [display_digits]
+./build/lanczos_app eval <output_dir_or_file> <z_value> [display_digits]
 ```
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `eval` | 关键字 | 激活复用求值模式 |
-| `output_dir` | 字符串 | 包含已计算好所需系数与参数文件的目录路径 |
+| `output_dir_or_file` | 字符串 | 包含系数与参数文件的目录路径，或包含 `state` 和 `approx coef` 结构段的独立系数文本文件路径 |
 | `z_value` | 浮点数 | 要求取 Gamma 函数的具体 `z` 值 |
 | `display_digits` | 整数（可选） | 动态指定当前单次估算的输出十进制显示精度 |
 
@@ -170,12 +170,18 @@ Selected 100 test points (z <= 50).
 
 在已经运行过模式 1 且得到了 `output_n7_g5_d16` 目录后：
 ```bash
-# 绕过繁重的矩阵求基运算，瞬间得出高精度 Gamma(50.5)
+# 绕过繁重的矩阵求基运算，直接从目录读取运算，瞬间得出高精度 Gamma(50.5)
 ./build/lanczos_app eval output_n7_g5_d16 50.5
 ```
 输出：
 ```
 Gamma(50.5) = 1.631853612882101968502e+64
+```
+
+您也可以直接传入包含 `state` 和 `approx coef` 的单文本系数文件：
+```bash
+# 支持包含中文字符的文件路径，读取独立系数文件并带入计算
+./build/lanczos_app eval "新建 文本文档.txt" 50.5
 ```
 
 您还可以通过附加参数，动态指定更高或更低的临时显示精度：
