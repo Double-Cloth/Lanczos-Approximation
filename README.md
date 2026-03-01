@@ -140,9 +140,15 @@ Selected 100 test points (z <= 50).
   Gamma(50) = 6.0828186406937170e+62  [relative error: 5.77e-09%, PASS]
 
 === Summary ===
-  Time taken:          0.021 s (21 ms)
+  Time taken:          0.021 s (21.0 ms)
   Total tests:         100
   Passed (relative error <= 1e-08%): 100/100
+
+=== absolute error ===
+  Max absolute error:  3.25e-22
+  Min absolute error:  0.00e+00
+  Avg absolute error:  4.19e-24
+=== relative error ===
   Max relative error:  7.24e-28%
   Min relative error:  0.00e+00%
   Avg relative error:  7.66e-29%
@@ -277,10 +283,12 @@ $$\text{relative error} = \frac{|\text{computed} - \text{expected}|}{|\text{expe
 本项目使用了多层次的算法优化来提升计算速度：
 
 ### BigInt 层
-| 优化 | 复杂度变化 | 说明 |
+| 优化 | 复杂度与内存效果 | 说明 |
 |------|-----------|------|
 | **Karatsuba 乘法** | O(n²) → O(n^1.585) | 操作数 ≥ 32 字（1024 位）时自动启用分治 |
 | **Knuth Algorithm D 除法** | O(n×bitlen) → O(n×m) | 替代逐位二进制长除法，数量级提升 |
+| **原地复合赋值运算符** | 杜绝重复内存分配 | 重写 `+=`、`-=`、`*=` 支持 `in-place` 原地计算，消灭循环中对象的无效拷贝 |
+| **无损内存边界重移** | 消除位宽截断损耗 | 重构 `operator<<=` 逆序全字平移外加顺序内联携位传播，根除位分裂引起的极小值精度丢失 |
 
 ### BigFloat 层
 | 优化 | 说明 |

@@ -19,24 +19,23 @@
 /**
  * @brief 默认构造: 值为 0（一个元素，值为 0）
  */
-BigInt::BigInt() : digits_(1, 0) {
-}
+BigInt::BigInt() : digits_(1, 0) {}
 
 /**
  * @brief 从 uint64_t 构造
  * @details 将 64 位整数拆分为低 32 位和高 32 位存入 digits_
  */
 BigInt::BigInt(const uint64_t val) {
-    if (val == 0) {
-        digits_.push_back(0);
-    } else {
-        // 低 32 位
-        digits_.push_back(static_cast<uint32_t>(val & 0xFFFFFFFFULL));
-        // 高 32 位（仅在非零时添加）
-        if (const auto hi = static_cast<uint32_t>(val >> 32); hi != 0) {
-            digits_.push_back(hi);
-        }
+  if (val == 0) {
+    digits_.push_back(0);
+  } else {
+    // 低 32 位
+    digits_.push_back(static_cast<uint32_t>(val & 0xFFFFFFFFULL));
+    // 高 32 位（仅在非零时添加）
+    if (const auto hi = static_cast<uint32_t>(val >> 32); hi != 0) {
+      digits_.push_back(hi);
     }
+  }
 }
 
 /**
@@ -45,27 +44,27 @@ BigInt::BigInt(const uint64_t val) {
  *          非数字字符（如空格、逗号）被静默跳过
  */
 BigInt::BigInt(const std::string &decimal_str) {
-    if (decimal_str.empty()) {
-        digits_.push_back(0);
-        return;
-    }
+  if (decimal_str.empty()) {
     digits_.push_back(0);
-    for (const char c: decimal_str) {
-        if (c < '0' || c > '9')
-            continue; // 跳过非数字字符
-        // *this = *this * 10 + (c - '0')
-        *this = this->mul_u32(10);
-        auto carry = static_cast<uint64_t>(c - '0');
-        for (size_t i = 0; i < digits_.size() && carry > 0; i++) {
-            carry += digits_[i];
-            digits_[i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
-            carry >>= 32;
-        }
-        if (carry > 0) {
-            digits_.push_back(static_cast<uint32_t>(carry));
-        }
+    return;
+  }
+  digits_.push_back(0);
+  for (const char c : decimal_str) {
+    if (c < '0' || c > '9')
+      continue; // 跳过非数字字符
+    // *this = *this * 10 + (c - '0')
+    *this = this->mul_u32(10);
+    auto carry = static_cast<uint64_t>(c - '0');
+    for (size_t i = 0; i < digits_.size() && carry > 0; i++) {
+      carry += digits_[i];
+      digits_[i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
+      carry >>= 32;
     }
-    trim(); // 去除可能的前导零
+    if (carry > 0) {
+      digits_.push_back(static_cast<uint32_t>(carry));
+    }
+  }
+  trim(); // 去除可能的前导零
 }
 
 // ============================================
@@ -77,9 +76,9 @@ BigInt::BigInt(const std::string &decimal_str) {
  * @details 维护不变量: digits_.back() != 0（除非数值为 0）
  */
 void BigInt::trim() {
-    while (digits_.size() > 1 && digits_.back() == 0) {
-        digits_.pop_back();
-    }
+  while (digits_.size() > 1 && digits_.back() == 0) {
+    digits_.pop_back();
+  }
 }
 
 /**
@@ -94,19 +93,19 @@ bool BigInt::is_zero() const { return digits_.size() == 1 && digits_[0] == 0; }
  * @details 先计算最高字的位长，再加上低位字的总位数
  */
 int BigInt::bit_length() const {
-    if (is_zero())
-        return 0;
-    // 最高字的索引
-    const int top = static_cast<int>(digits_.size()) - 1;
-    uint32_t hi = digits_[top];
-    // 低位字贡献 top * 32 位
-    int bits = top * 32;
-    // 计算最高字中有效位数
-    while (hi > 0) {
-        bits++;
-        hi >>= 1;
-    }
-    return bits;
+  if (is_zero())
+    return 0;
+  // 最高字的索引
+  const int top = static_cast<int>(digits_.size()) - 1;
+  uint32_t hi = digits_[top];
+  // 低位字贡献 top * 32 位
+  int bits = top * 32;
+  // 计算最高字中有效位数
+  while (hi > 0) {
+    bits++;
+    hi >>= 1;
+  }
+  return bits;
 }
 
 /**
@@ -114,11 +113,11 @@ int BigInt::bit_length() const {
  * @return true 表示该位为 1
  */
 bool BigInt::get_bit(const int pos) const {
-    const int word = pos / 32; // 所在的 uint32_t 索引
-    const int bit = pos % 32; // 在该字内的位偏移
-    if (word >= static_cast<int>(digits_.size()))
-        return false;
-    return (digits_[word] >> bit) & 1;
+  const int word = pos / 32; // 所在的 uint32_t 索引
+  const int bit = pos % 32;  // 在该字内的位偏移
+  if (word >= static_cast<int>(digits_.size()))
+    return false;
+  return (digits_[word] >> bit) & 1;
 }
 
 // ============================================
@@ -130,17 +129,17 @@ bool BigInt::get_bit(const int pos) const {
  * @return -1 / 0 / 1
  */
 int BigInt::compare(const BigInt &other) const {
-    // 字长不同，字长大者值更大
-    if (digits_.size() != other.digits_.size()) {
-        return digits_.size() < other.digits_.size() ? -1 : 1;
+  // 字长不同，字长大者值更大
+  if (digits_.size() != other.digits_.size()) {
+    return digits_.size() < other.digits_.size() ? -1 : 1;
+  }
+  // 字长相同，从最高字向最低字逐字比较
+  for (int i = static_cast<int>(digits_.size()) - 1; i >= 0; i--) {
+    if (digits_[i] != other.digits_[i]) {
+      return digits_[i] < other.digits_[i] ? -1 : 1;
     }
-    // 字长相同，从最高字向最低字逐字比较
-    for (int i = static_cast<int>(digits_.size()) - 1; i >= 0; i--) {
-        if (digits_[i] != other.digits_[i]) {
-            return digits_[i] < other.digits_[i] ? -1 : 1;
-        }
-    }
-    return 0; // 完全相同
+  }
+  return 0; // 完全相同
 }
 
 // ============================================
@@ -152,27 +151,33 @@ int BigInt::compare(const BigInt &other) const {
  * @details 从低位到高位逐字相加，carry 在每步传播
  *          时间复杂度: O(max(n, m))
  */
-BigInt BigInt::operator+(const BigInt &other) const {
-    BigInt result;
-    const size_t n = std::max(digits_.size(), other.digits_.size());
-    result.digits_.resize(n, 0);
-    uint64_t carry = 0;
-    for (size_t i = 0; i < n; i++) {
-        const uint64_t a = i < digits_.size() ? digits_[i] : 0;
-        const uint64_t b = i < other.digits_.size() ? other.digits_[i] : 0;
-        carry += a + b;
-        result.digits_[i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
-        carry >>= 32;
-    }
-    if (carry > 0) {
-        result.digits_.push_back(static_cast<uint32_t>(carry));
-    }
-    return result;
+BigInt &BigInt::operator+=(const BigInt &other) {
+  if (this == &other) {
+    BigInt temp = other;
+    return *this += temp;
+  }
+  const size_t n = std::max(digits_.size(), other.digits_.size());
+  if (digits_.size() < n) {
+    digits_.resize(n, 0); // 原地扩容
+  }
+  uint64_t carry = 0;
+  for (size_t i = 0; i < n; i++) {
+    const uint64_t a = digits_[i];
+    const uint64_t b = i < other.digits_.size() ? other.digits_[i] : 0;
+    carry += a + b;
+    digits_[i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
+    carry >>= 32;
+  }
+  if (carry > 0) {
+    digits_.push_back(static_cast<uint32_t>(carry));
+  }
+  return *this;
 }
 
-BigInt &BigInt::operator+=(const BigInt &other) {
-    *this = *this + other;
-    return *this;
+BigInt BigInt::operator+(const BigInt &other) const {
+  BigInt result = *this;
+  result += other;
+  return result;
 }
 
 // ============================================
@@ -185,30 +190,33 @@ BigInt &BigInt::operator+=(const BigInt &other) {
  * @details 从低位到高位逐字相减，借位通过 borrow 传播
  *          时间复杂度: O(n)
  */
-BigInt BigInt::operator-(const BigInt &other) const {
-    assert(*this >= other); // 前提条件: 被减数 ≥ 减数
-    BigInt result;
-    result.digits_.resize(digits_.size(), 0);
-    int64_t borrow = 0;
-    for (size_t i = 0; i < digits_.size(); i++) {
-        const int64_t a = digits_[i];
-        const int64_t b = i < other.digits_.size() ? other.digits_[i] : 0;
-        int64_t diff = a - b - borrow;
-        if (diff < 0) {
-            diff += 1LL << 32; // 向高位借 2^32
-            borrow = 1;
-        } else {
-            borrow = 0;
-        }
-        result.digits_[i] = static_cast<uint32_t>(diff);
+BigInt &BigInt::operator-=(const BigInt &other) {
+  if (this == &other) {
+    digits_.assign(1, 0);
+    return *this;
+  }
+  assert(*this >= other); // 前提条件: 被减数 ≥ 减数
+  int64_t borrow = 0;
+  for (size_t i = 0; i < digits_.size(); i++) {
+    const int64_t a = digits_[i];
+    const int64_t b = i < other.digits_.size() ? other.digits_[i] : 0;
+    int64_t diff = a - b - borrow;
+    if (diff < 0) {
+      diff += 1LL << 32; // 向高位借 2^32
+      borrow = 1;
+    } else {
+      borrow = 0;
     }
-    result.trim();
-    return result;
+    digits_[i] = static_cast<uint32_t>(diff);
+  }
+  trim();
+  return *this;
 }
 
-BigInt &BigInt::operator-=(const BigInt &other) {
-    *this = *this - other;
-    return *this;
+BigInt BigInt::operator-(const BigInt &other) const {
+  BigInt result = *this;
+  result -= other;
+  return result;
 }
 
 // ============================================
@@ -231,37 +239,37 @@ BigInt &BigInt::operator-=(const BigInt &other) {
  *          否则使用经典 O(n×m) 长乘法。
  */
 BigInt BigInt::operator*(const BigInt &other) const {
-    if (is_zero() || other.is_zero())
-        return BigInt(0);
+  if (is_zero() || other.is_zero())
+    return BigInt(0);
 
-    const size_t n = digits_.size();
-    const size_t m = other.digits_.size();
+  const size_t n = digits_.size();
+  const size_t m = other.digits_.size();
 
-    // 当两操作数都超过阈值时启用 Karatsuba
-    if (n >= KARATSUBA_THRESHOLD && m >= KARATSUBA_THRESHOLD) {
-        return karatsuba_mul(*this, other);
+  // 当两操作数都超过阈值时启用 Karatsuba
+  if (n >= KARATSUBA_THRESHOLD && m >= KARATSUBA_THRESHOLD) {
+    return karatsuba_mul(*this, other);
+  }
+
+  // 经典长乘法
+  BigInt result;
+  result.digits_.resize(n + m, 0);
+
+  for (size_t i = 0; i < n; i++) {
+    uint64_t carry = 0;
+    for (size_t j = 0; j < m; j++) {
+      uint64_t prod = static_cast<uint64_t>(digits_[i]) * other.digits_[j] +
+                      result.digits_[i + j] + carry;
+      result.digits_[i + j] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
+      carry = prod >> 32;
     }
-
-    // 经典长乘法
-    BigInt result;
-    result.digits_.resize(n + m, 0);
-
-    for (size_t i = 0; i < n; i++) {
-        uint64_t carry = 0;
-        for (size_t j = 0; j < m; j++) {
-            uint64_t prod = static_cast<uint64_t>(digits_[i]) * other.digits_[j] +
-                            result.digits_[i + j] + carry;
-            result.digits_[i + j] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
-            carry = prod >> 32;
-        }
-        for (size_t k = i + m; carry > 0 && k < result.digits_.size(); k++) {
-            uint64_t sum = static_cast<uint64_t>(result.digits_[k]) + carry;
-            result.digits_[k] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-            carry = sum >> 32;
-        }
+    for (size_t k = i + m; carry > 0 && k < result.digits_.size(); k++) {
+      uint64_t sum = static_cast<uint64_t>(result.digits_[k]) + carry;
+      result.digits_[k] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+      carry = sum >> 32;
     }
-    result.trim();
-    return result;
+  }
+  result.trim();
+  return result;
 }
 
 /**
@@ -274,75 +282,75 @@ BigInt BigInt::operator*(const BigInt &other) const {
  *   result = z2 × B² + z1 × B + z0
  */
 BigInt BigInt::karatsuba_mul(const BigInt &a, const BigInt &b) {
-    size_t n = a.digits_.size();
-    size_t m = b.digits_.size();
+  size_t n = a.digits_.size();
+  size_t m = b.digits_.size();
 
-    // 小规模回退到经典乘法
-    if (n < KARATSUBA_THRESHOLD || m < KARATSUBA_THRESHOLD) {
-        // 经典乘法（内联）
-        BigInt result;
-        result.digits_.resize(n + m, 0);
-        for (size_t i = 0; i < n; i++) {
-            uint64_t carry = 0;
-            for (size_t j = 0; j < m; j++) {
-                uint64_t prod = static_cast<uint64_t>(a.digits_[i]) * b.digits_[j] +
-                                result.digits_[i + j] + carry;
-                result.digits_[i + j] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
-                carry = prod >> 32;
-            }
-            for (size_t k = i + m; carry > 0 && k < result.digits_.size(); k++) {
-                uint64_t sum = static_cast<uint64_t>(result.digits_[k]) + carry;
-                result.digits_[k] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-                carry = sum >> 32;
-            }
-        }
-        result.trim();
-        return result;
+  // 小规模回退到经典乘法
+  if (n < KARATSUBA_THRESHOLD || m < KARATSUBA_THRESHOLD) {
+    // 经典乘法（内联）
+    BigInt result;
+    result.digits_.resize(n + m, 0);
+    for (size_t i = 0; i < n; i++) {
+      uint64_t carry = 0;
+      for (size_t j = 0; j < m; j++) {
+        uint64_t prod = static_cast<uint64_t>(a.digits_[i]) * b.digits_[j] +
+                        result.digits_[i + j] + carry;
+        result.digits_[i + j] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
+        carry = prod >> 32;
+      }
+      for (size_t k = i + m; carry > 0 && k < result.digits_.size(); k++) {
+        uint64_t sum = static_cast<uint64_t>(result.digits_[k]) + carry;
+        result.digits_[k] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+        carry = sum >> 32;
+      }
     }
-
-    // 分割点: 取两操作数较大者的一半
-    size_t half = std::max(n, m) / 2;
-
-    // a = a_hi * B^half + a_lo
-    BigInt a_lo, a_hi;
-    if (half < n) {
-        a_lo.digits_.assign(a.digits_.begin(), a.digits_.begin() + half);
-        a_hi.digits_.assign(a.digits_.begin() + half, a.digits_.end());
-    } else {
-        a_lo = a;
-        a_hi = BigInt(0);
-    }
-    a_lo.trim();
-    a_hi.trim();
-
-    // b = b_hi * B^half + b_lo
-    BigInt b_lo, b_hi;
-    if (half < m) {
-        b_lo.digits_.assign(b.digits_.begin(), b.digits_.begin() + half);
-        b_hi.digits_.assign(b.digits_.begin() + half, b.digits_.end());
-    } else {
-        b_lo = b;
-        b_hi = BigInt(0);
-    }
-    b_lo.trim();
-    b_hi.trim();
-
-    // 3 次递归乘法
-    BigInt z0 = a_lo * b_lo; // a_lo * b_lo
-    BigInt z2 = a_hi * b_hi; // a_hi * b_hi
-    BigInt z1 = (a_lo + a_hi) * (b_lo + b_hi); // (a_lo+a_hi) * (b_lo+b_hi)
-    z1 = z1 - z0 - z2; // z1 = cross term
-
-    // result = z2 * B^(2*half) + z1 * B^half + z0
-    int shift_bits = static_cast<int>(half) * 32;
-    BigInt result = (z2 << (2 * shift_bits)) + (z1 << shift_bits) + z0;
     result.trim();
     return result;
+  }
+
+  // 分割点: 取两操作数较大者的一半
+  size_t half = std::max(n, m) / 2;
+
+  // a = a_hi * B^half + a_lo
+  BigInt a_lo, a_hi;
+  if (half < n) {
+    a_lo.digits_.assign(a.digits_.begin(), a.digits_.begin() + half);
+    a_hi.digits_.assign(a.digits_.begin() + half, a.digits_.end());
+  } else {
+    a_lo = a;
+    a_hi = BigInt(0);
+  }
+  a_lo.trim();
+  a_hi.trim();
+
+  // b = b_hi * B^half + b_lo
+  BigInt b_lo, b_hi;
+  if (half < m) {
+    b_lo.digits_.assign(b.digits_.begin(), b.digits_.begin() + half);
+    b_hi.digits_.assign(b.digits_.begin() + half, b.digits_.end());
+  } else {
+    b_lo = b;
+    b_hi = BigInt(0);
+  }
+  b_lo.trim();
+  b_hi.trim();
+
+  // 3 次递归乘法
+  BigInt z0 = a_lo * b_lo;                   // a_lo * b_lo
+  BigInt z2 = a_hi * b_hi;                   // a_hi * b_hi
+  BigInt z1 = (a_lo + a_hi) * (b_lo + b_hi); // (a_lo+a_hi) * (b_lo+b_hi)
+  z1 = z1 - z0 - z2;                         // z1 = cross term
+
+  // result = z2 * B^(2*half) + z1 * B^half + z0
+  int shift_bits = static_cast<int>(half) * 32;
+  BigInt result = (z2 << (2 * shift_bits)) + (z1 << shift_bits) + z0;
+  result.trim();
+  return result;
 }
 
 BigInt &BigInt::operator*=(const BigInt &other) {
-    *this = *this * other;
-    return *this;
+  *this = *this * other;
+  return *this;
 }
 
 /**
@@ -350,20 +358,20 @@ BigInt &BigInt::operator*=(const BigInt &other) {
  * @details 避免了通用乘法的双重循环开销
  */
 BigInt BigInt::mul_u32(uint32_t val) const {
-    if (val == 0 || is_zero())
-        return BigInt(0);
-    BigInt result;
-    result.digits_.resize(digits_.size(), 0);
-    uint64_t carry = 0;
-    for (size_t i = 0; i < digits_.size(); i++) {
-        uint64_t prod = static_cast<uint64_t>(digits_[i]) * val + carry;
-        result.digits_[i] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
-        carry = prod >> 32;
-    }
-    if (carry > 0) {
-        result.digits_.push_back(static_cast<uint32_t>(carry));
-    }
-    return result;
+  if (val == 0 || is_zero())
+    return BigInt(0);
+  BigInt result;
+  result.digits_.resize(digits_.size(), 0);
+  uint64_t carry = 0;
+  for (size_t i = 0; i < digits_.size(); i++) {
+    uint64_t prod = static_cast<uint64_t>(digits_[i]) * val + carry;
+    result.digits_[i] = static_cast<uint32_t>(prod & 0xFFFFFFFFULL);
+    carry = prod >> 32;
+  }
+  if (carry > 0) {
+    result.digits_.push_back(static_cast<uint32_t>(carry));
+  }
+  return result;
 }
 
 // ============================================
@@ -380,19 +388,19 @@ BigInt BigInt::mul_u32(uint32_t val) const {
  *          时间复杂度: O(n)
  */
 std::pair<BigInt, uint32_t> BigInt::divmod_u32(uint32_t val) const {
-    if (val == 0)
-        throw std::runtime_error("Division by zero");
-    BigInt quotient;
-    quotient.digits_.resize(digits_.size(), 0);
-    uint64_t rem = 0;
-    // 从最高字向最低字处理
-    for (int i = static_cast<int>(digits_.size()) - 1; i >= 0; i--) {
-        rem = (rem << 32) | digits_[i];
-        quotient.digits_[i] = static_cast<uint32_t>(rem / val);
-        rem %= val;
-    }
-    quotient.trim();
-    return {quotient, static_cast<uint32_t>(rem)};
+  if (val == 0)
+    throw std::runtime_error("Division by zero");
+  BigInt quotient;
+  quotient.digits_.resize(digits_.size(), 0);
+  uint64_t rem = 0;
+  // 从最高字向最低字处理
+  for (int i = static_cast<int>(digits_.size()) - 1; i >= 0; i--) {
+    rem = (rem << 32) | digits_[i];
+    quotient.digits_[i] = static_cast<uint32_t>(rem / val);
+    rem %= val;
+  }
+  quotient.trim();
+  return {quotient, static_cast<uint32_t>(rem)};
 }
 
 /**
@@ -423,108 +431,108 @@ std::pair<BigInt, uint32_t> BigInt::divmod_u32(uint32_t val) const {
  *   复杂度: O(n×m)，远快于二进制逐位法的 O(n × bitlen)
  */
 std::pair<BigInt, BigInt> BigInt::divmod(const BigInt &divisor) const {
-    if (divisor.is_zero())
-        throw std::runtime_error("Division by zero");
+  if (divisor.is_zero())
+    throw std::runtime_error("Division by zero");
 
-    int cmp = compare(divisor);
-    if (cmp < 0)
-        return {BigInt(0), *this};
-    if (cmp == 0)
-        return {BigInt(1), BigInt(0)};
+  int cmp = compare(divisor);
+  if (cmp < 0)
+    return {BigInt(0), *this};
+  if (cmp == 0)
+    return {BigInt(1), BigInt(0)};
 
-    // 单字除数: 使用 O(n) 快速路径
-    if (divisor.digits_.size() == 1) {
-        auto [q, r] = divmod_u32(divisor.digits_[0]);
-        return {q, BigInt(r)};
+  // 单字除数: 使用 O(n) 快速路径
+  if (divisor.digits_.size() == 1) {
+    auto [q, r] = divmod_u32(divisor.digits_[0]);
+    return {q, BigInt(r)};
+  }
+
+  // === Knuth Algorithm D ===
+  size_t n = divisor.digits_.size();
+  size_t m = digits_.size() - n;
+
+  // D1: 规范化 — 左移使除数最高字的最高位为 1
+  uint32_t d_top = divisor.digits_[n - 1];
+  int s = 0; // 规范化移位量
+  while ((d_top & 0x80000000U) == 0) {
+    d_top <<= 1;
+    s++;
+  }
+
+  // 对除数和被除数都左移 s 位
+  BigInt v = divisor << s;
+  BigInt u = *this << s;
+
+  // 确保 u 有 n+m+1 个字（最高位可能为 0）
+  while (u.digits_.size() <= n + m) {
+    u.digits_.push_back(0);
+  }
+
+  BigInt quotient;
+  quotient.digits_.resize(m + 1, 0);
+
+  // D2-D7: 主循环，对每个商字 j
+  for (int j = static_cast<int>(m); j >= 0; j--) {
+    // D3: 估算商字 q̂
+    uint64_t u_hi =
+        (static_cast<uint64_t>(u.digits_[j + n]) << 32) | u.digits_[j + n - 1];
+    uint64_t qhat = u_hi / v.digits_[n - 1];
+    uint64_t rhat = u_hi % v.digits_[n - 1];
+
+    // 修正 qhat（Knuth 的精确调整）
+    while (qhat >= 0x100000000ULL ||
+           (n >= 2 &&
+            qhat * v.digits_[n - 2] > (rhat << 32) + u.digits_[j + n - 2])) {
+      qhat--;
+      rhat += v.digits_[n - 1];
+      if (rhat >= 0x100000000ULL)
+        break;
     }
 
-    // === Knuth Algorithm D ===
-    size_t n = divisor.digits_.size();
-    size_t m = digits_.size() - n;
-
-    // D1: 规范化 — 左移使除数最高字的最高位为 1
-    uint32_t d_top = divisor.digits_[n - 1];
-    int s = 0; // 规范化移位量
-    while ((d_top & 0x80000000U) == 0) {
-        d_top <<= 1;
-        s++;
+    // D4: u[j..j+n] -= qhat * v
+    int64_t borrow = 0;
+    for (size_t i = 0; i < n; i++) {
+      uint64_t prod = qhat * v.digits_[i];
+      int64_t diff = static_cast<int64_t>(u.digits_[j + i]) -
+                     static_cast<int64_t>(prod & 0xFFFFFFFFULL) - borrow;
+      u.digits_[j + i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
+      borrow = static_cast<int64_t>(prod >> 32) - (diff >> 32);
     }
+    int64_t diff_top = static_cast<int64_t>(u.digits_[j + n]) - borrow;
+    u.digits_[j + n] = static_cast<uint32_t>(diff_top & 0xFFFFFFFFULL);
 
-    // 对除数和被除数都左移 s 位
-    BigInt v = divisor << s;
-    BigInt u = *this << s;
+    // D5: 设置商字
+    quotient.digits_[j] = static_cast<uint32_t>(qhat);
 
-    // 确保 u 有 n+m+1 个字（最高位可能为 0）
-    while (u.digits_.size() <= n + m) {
-        u.digits_.push_back(0);
+    // D6: 若借位（diff_top < 0），补充加回
+    if (diff_top < 0) {
+      quotient.digits_[j]--;
+      uint64_t carry = 0;
+      for (size_t i = 0; i < n; i++) {
+        carry += static_cast<uint64_t>(u.digits_[j + i]) + v.digits_[i];
+        u.digits_[j + i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
+        carry >>= 32;
+      }
+      u.digits_[j + n] += static_cast<uint32_t>(carry);
     }
+  }
 
-    BigInt quotient;
-    quotient.digits_.resize(m + 1, 0);
-
-    // D2-D7: 主循环，对每个商字 j
-    for (int j = static_cast<int>(m); j >= 0; j--) {
-        // D3: 估算商字 q̂
-        uint64_t u_hi =
-                (static_cast<uint64_t>(u.digits_[j + n]) << 32) | u.digits_[j + n - 1];
-        uint64_t qhat = u_hi / v.digits_[n - 1];
-        uint64_t rhat = u_hi % v.digits_[n - 1];
-
-        // 修正 qhat（Knuth 的精确调整）
-        while (qhat >= 0x100000000ULL ||
-               (n >= 2 &&
-                qhat * v.digits_[n - 2] > (rhat << 32) + u.digits_[j + n - 2])) {
-            qhat--;
-            rhat += v.digits_[n - 1];
-            if (rhat >= 0x100000000ULL)
-                break;
-        }
-
-        // D4: u[j..j+n] -= qhat * v
-        int64_t borrow = 0;
-        for (size_t i = 0; i < n; i++) {
-            uint64_t prod = qhat * v.digits_[i];
-            int64_t diff = static_cast<int64_t>(u.digits_[j + i]) -
-                           static_cast<int64_t>(prod & 0xFFFFFFFFULL) - borrow;
-            u.digits_[j + i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
-            borrow = static_cast<int64_t>(prod >> 32) - (diff >> 32);
-        }
-        int64_t diff_top = static_cast<int64_t>(u.digits_[j + n]) - borrow;
-        u.digits_[j + n] = static_cast<uint32_t>(diff_top & 0xFFFFFFFFULL);
-
-        // D5: 设置商字
-        quotient.digits_[j] = static_cast<uint32_t>(qhat);
-
-        // D6: 若借位（diff_top < 0），补充加回
-        if (diff_top < 0) {
-            quotient.digits_[j]--;
-            uint64_t carry = 0;
-            for (size_t i = 0; i < n; i++) {
-                carry += static_cast<uint64_t>(u.digits_[j + i]) + v.digits_[i];
-                u.digits_[j + i] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
-                carry >>= 32;
-            }
-            u.digits_[j + n] += static_cast<uint32_t>(carry);
-        }
-    }
-
-    // D8: 反规范化余数
-    quotient.trim();
-    BigInt remainder = u >> s;
-    // 余数只取前 n 个字
-    if (remainder.digits_.size() > n) {
-        remainder.digits_.resize(n);
-    }
-    remainder.trim();
-    return {quotient, remainder};
+  // D8: 反规范化余数
+  quotient.trim();
+  BigInt remainder = u >> s;
+  // 余数只取前 n 个字
+  if (remainder.digits_.size() > n) {
+    remainder.digits_.resize(n);
+  }
+  remainder.trim();
+  return {quotient, remainder};
 }
 
 BigInt BigInt::operator/(const BigInt &other) const {
-    return divmod(other).first;
+  return divmod(other).first;
 }
 
 BigInt BigInt::operator%(const BigInt &other) const {
-    return divmod(other).second;
+  return divmod(other).second;
 }
 
 // ============================================
@@ -537,32 +545,45 @@ BigInt BigInt::operator%(const BigInt &other) const {
  *          1. 整字移位: 新数组前 word_shift 个字为 0
  *          2. 比特移位: 每个字左移 bit_shift 位，溢出部分进入高一字
  */
-BigInt BigInt::operator<<(int bits) const {
-    if (bits == 0 || is_zero())
-        return *this;
+BigInt &BigInt::operator<<=(int bits) {
+  if (bits == 0 || is_zero())
+    return *this;
 
-    int word_shift = bits / 32; // 整字偏移量
-    int bit_shift = bits % 32; // 字内比特偏移量
+  int word_shift = bits / 32;
+  int bit_shift = bits % 32;
 
-    BigInt result;
-    result.digits_.resize(digits_.size() + word_shift + 1, 0);
+  int old_size = static_cast<int>(digits_.size());
+  // 若有比特偏移，可能多溢出一个字
+  digits_.resize(old_size + word_shift + (bit_shift > 0 ? 1 : 0), 0);
 
-    uint64_t carry = 0;
-    for (size_t i = 0; i < digits_.size(); i++) {
-        uint64_t val = (static_cast<uint64_t>(digits_[i]) << bit_shift) | carry;
-        result.digits_[i + word_shift] = static_cast<uint32_t>(val & 0xFFFFFFFFULL);
-        carry = val >> 32;
+  // 1. 整字上移 (从后往前，安全覆盖)
+  if (word_shift > 0) {
+    for (int i = old_size - 1; i >= 0; i--) {
+      digits_[i + word_shift] = digits_[i];
     }
-    if (carry > 0) {
-        result.digits_[digits_.size() + word_shift] = static_cast<uint32_t>(carry);
+    for (int i = 0; i < word_shift; i++) {
+      digits_[i] = 0;
     }
-    result.trim();
-    return result;
+  }
+
+  // 2. 字内比特左移 (从前往后，携带进位向上传递)
+  if (bit_shift > 0) {
+    uint32_t carry = 0;
+    for (size_t i = word_shift; i < digits_.size(); i++) {
+      uint64_t val = (static_cast<uint64_t>(digits_[i]) << bit_shift) | carry;
+      digits_[i] = static_cast<uint32_t>(val & 0xFFFFFFFFULL);
+      carry = static_cast<uint32_t>(val >> 32);
+    }
+  }
+
+  trim();
+  return *this;
 }
 
-BigInt &BigInt::operator<<=(int bits) {
-    *this = *this << bits;
-    return *this;
+BigInt BigInt::operator<<(int bits) const {
+  BigInt result = *this;
+  result <<= bits;
+  return result;
 }
 
 /**
@@ -572,35 +593,36 @@ BigInt &BigInt::operator<<=(int bits) {
  *          2. 比特移位: 每个字右移 bit_shift 位，
  *             高一字的低位补入当前字的高位
  */
-BigInt BigInt::operator>>(int bits) const {
-    if (bits == 0)
-        return *this;
+BigInt &BigInt::operator>>=(int bits) {
+  if (bits == 0 || is_zero())
+    return *this;
 
-    int word_shift = bits / 32;
-    int bit_shift = bits % 32;
+  int word_shift = bits / 32;
+  int bit_shift = bits % 32;
 
-    // 若移位量超过总位长，结果为 0
-    if (word_shift >= static_cast<int>(digits_.size()))
-        return BigInt(0);
+  // 若移位量超过总位长，结果为 0
+  if (word_shift >= static_cast<int>(digits_.size())) {
+    digits_.assign(1, 0);
+    return *this;
+  }
 
-    BigInt result;
-    size_t new_size = digits_.size() - word_shift;
-    result.digits_.resize(new_size, 0);
-
-    for (size_t i = 0; i < new_size; i++) {
-        result.digits_[i] = digits_[i + word_shift] >> bit_shift;
-        // 从高一字借入低位（注意 bit_shift 为 0 时不需要借位）
-        if (bit_shift > 0 && i + word_shift + 1 < digits_.size()) {
-            result.digits_[i] |= digits_[i + word_shift + 1] << (32 - bit_shift);
-        }
+  size_t new_size = digits_.size() - word_shift;
+  for (size_t i = 0; i < new_size; i++) {
+    digits_[i] = digits_[i + word_shift] >> bit_shift;
+    // 从高一字借入低位（注意 bit_shift 为 0 时不需要借位）
+    if (bit_shift > 0 && i + word_shift + 1 < digits_.size()) {
+      digits_[i] |= digits_[i + word_shift + 1] << (32 - bit_shift);
     }
-    result.trim();
-    return result;
+  }
+  digits_.resize(new_size);
+  trim();
+  return *this;
 }
 
-BigInt &BigInt::operator>>=(int bits) {
-    *this = *this >> bits;
-    return *this;
+BigInt BigInt::operator>>(int bits) const {
+  BigInt result = *this;
+  result >>= bits;
+  return result;
 }
 
 // ============================================
@@ -613,22 +635,22 @@ BigInt &BigInt::operator>>=(int bits) {
  *          时间复杂度: O(n × D)，D 为十进制位数
  */
 std::string BigInt::to_decimal_string() const {
-    if (is_zero())
-        return "0";
+  if (is_zero())
+    return "0";
 
-    std::string result;
-    BigInt temp = *this;
-    while (!temp.is_zero()) {
-        auto [q, r] = temp.divmod_u32(10);
-        result += static_cast<char>('0' + r);
-        temp = q;
-    }
-    std::reverse(result.begin(), result.end());
-    return result;
+  std::string result;
+  BigInt temp = *this;
+  while (!temp.is_zero()) {
+    auto [q, r] = temp.divmod_u32(10);
+    result += static_cast<char>('0' + r);
+    temp = q;
+  }
+  std::reverse(result.begin(), result.end());
+  return result;
 }
 
 /** @brief 流输出运算符 */
 std::ostream &operator<<(std::ostream &os, const BigInt &b) {
-    os << b.to_decimal_string();
-    return os;
+  os << b.to_decimal_string();
+  return os;
 }
