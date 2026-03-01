@@ -27,6 +27,8 @@ project(LanczosApproximation LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(OpenMP)
+
 # --- bignum 静态库: 任意精度算术基础设施 ---
 # 包含 BigInt (大整数) 和 BigFloat (高精度浮点数) 的实现
 add_library(bignum STATIC
@@ -34,6 +36,9 @@ add_library(bignum STATIC
     src/BigFloat.cpp
 )
 target_include_directories(bignum PUBLIC ${CMAKE_SOURCE_DIR}/include)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(bignum PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 # --- lanczos 静态库: Lanczos 近似算法 ---
 # 依赖 bignum 库进行高精度计算
@@ -42,6 +47,9 @@ add_library(lanczos STATIC
 )
 target_include_directories(lanczos PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(lanczos PUBLIC bignum)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(lanczos PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 # --- 主程序: 系数计算与 Gamma 函数求值 ---
 add_executable(lanczos_app src/main.cpp)

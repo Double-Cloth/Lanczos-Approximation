@@ -382,7 +382,16 @@ BigFloat BigFloat::from_string(const std::string &str, int prec_bits) {
     if (K < 0)
       K = 0;
 
-    result.mantissa_ = (result.mantissa_ << K) / five_pow;
+    BigInt shifted_mantissa = result.mantissa_ << K;
+    auto [q, r] = shifted_mantissa.divmod(five_pow);
+
+    // 检查余数是否大于等于除数的一半 (Round to nearest)
+    BigInt r_twice = r << 1;
+    if (r_twice >= five_pow) {
+      q += BigInt(1); // 进位补偿
+    }
+
+    result.mantissa_ = q;
     result.exponent_ -= (abs_exp + K);
   }
 
@@ -775,7 +784,12 @@ BigFloat BigFloat::sin(const BigFloat &x) {
 
   // --- 步骤 1: 周期缩减 (Range Reduction Module) ---
   // 将 val 根据 pi 取模到 [-pi/2, pi/2]
-  BigFloat pi_val = BigFloat::pi(work_prec);
+  int x_magnitude = val.exponent() + val.mantissa().bit_length();
+  int pi_prec = work_prec;
+  if (x_magnitude > 0) {
+    pi_prec += x_magnitude + 32; // 动态索要更高精度的 pi
+  }
+  BigFloat pi_val = BigFloat::pi(pi_prec);
 
   if (BigFloat half_pi = pi_val.mul_pow2(-1); val > half_pi) {
     // n = floor(val/pi + 0.5) 取最近整数
@@ -815,9 +829,13 @@ BigFloat BigFloat::sin(const BigFloat &x) {
 
   // --- 步骤 3: 泰勒级数计算 ---
   // sin(t) = t - t^3/3! + t^5/5! - ...
+  int taylor_work_prec = work_prec + 64; // +64 延迟舍入保护位
   BigFloat sum = reduced;
+  sum.set_precision(taylor_work_prec);
   BigFloat term = reduced;
+  term.set_precision(taylor_work_prec);
   BigFloat reduced_sq = reduced * reduced;
+  reduced_sq.set_precision(taylor_work_prec);
 
   for (int k = 1;; k++) {
     term *= reduced_sq;
@@ -906,14 +924,17 @@ BigFloat BigFloat::exp(const BigFloat &x) {
       r = std::max(0, 8 + total); // val < 1 时适度缩减
     }
   }
+  work_prec += r; // 严格抵消反向连续 r 次平方造成的 r 位绝对舍入
+  val.set_precision(work_prec);
   BigFloat reduced = val.mul_pow2(-r); // reduced = val / 2^r
 
-  // --- 步骤 2: 泰勒级数 ---
+  // --- 步骤 2: 泰勒级数 (Lazy Normalization) ---
   // e^reduced = 1 + reduced + reduced²/2! + reduced³/3! + ...
   // 优化: 用 div_u32(k) 替代 operator/(BigFloat(k))，避免每次迭代都做完整
   // BigFloat 除法
-  BigFloat sum(1, work_prec);
-  BigFloat term(1, work_prec);
+  int taylor_work_prec = work_prec + 64; // +64 延迟舍入保护位
+  BigFloat sum(1, taylor_work_prec);
+  BigFloat term(1, taylor_work_prec);
   for (int k = 1;; k++) {
     term *= reduced;
     term = term.div_u32(static_cast<uint32_t>(k)); // O(n) 单字除法
@@ -994,9 +1015,13 @@ BigFloat BigFloat::ln(const BigFloat &x) {
   BigFloat t = (m - one) / (m + one); // t ∈ [0, 1/3)
   BigFloat t2 = t * t;                // t² 用于递推
 
-  // atanh(t) = t + t³/3 + t⁵/5 + ...
+  // atanh(t) = t + t³/3 + t⁵/5 + ... (Lazy Normalization)
+  int taylor_work_prec = work_prec + 64; // +64 延迟舍入保护位
   BigFloat sum = t;
+  sum.set_precision(taylor_work_prec);
   BigFloat power = t; // power = t^(2k+1)
+  power.set_precision(taylor_work_prec);
+  t2.set_precision(taylor_work_prec);
   for (int k = 1;; k++) {
     power *= t2; // power = t^(2k+1)
     BigFloat term = power.div_u32(static_cast<uint32_t>(2 * k + 1));
@@ -1025,8 +1050,13 @@ BigFloat BigFloat::ln(const BigFloat &x) {
       BigFloat one_wp(1, work_prec);
       BigFloat third = one_wp / BigFloat(3, work_prec);
       BigFloat third2 = third * third;
+
+      int taylor_ln2_prec = work_prec + 64; // +64 延迟舍入保护位
       BigFloat ln2_sum = third;
+      ln2_sum.set_precision(taylor_ln2_prec);
       BigFloat ln2_power = third;
+      ln2_power.set_precision(taylor_ln2_prec);
+      third2.set_precision(taylor_ln2_prec);
       for (int k = 1;; k++) {
         ln2_power *= third2;
         BigFloat term = ln2_power.div_u32(static_cast<uint32_t>(2 * k + 1));
@@ -1085,44 +1115,66 @@ BigFloat BigFloat::pow(const BigFloat &base, const BigFloat &exponent) {
   int guard = std::max(128, prec / 8);
   int work_prec = prec + guard;
 
-  // --- 检查指数是否为非负整数 ---
-  // 条件: exponent ≥ 0 且 exponent_ ≥ 0（没有小数部分）
-  if (!exponent.is_negative() && exponent.exponent() >= 0) {
-    // 直接从 BigInt 提取整数值，避免 to_decimal_string + stoll 的 O(n×D) 开销
+  // --- 检查指数是否完全为整数 ---
+  if (exponent.floor() == exponent) {
+    if (exponent.is_negative()) {
+      BigFloat inv_result = pow(base, -exponent);
+      BigFloat one(1, work_prec);
+      BigFloat final_res = one / inv_result;
+      final_res.set_precision(prec);
+      return final_res;
+    }
+
     BigInt mant = exponent.mantissa();
     int64_t shift = exponent.exponent();
     if (shift > 0 && shift <= 64) {
       mant <<= static_cast<int>(shift);
     }
-    int64_t total_bits = static_cast<int64_t>(mant.bit_length());
-    if (total_bits <= 31) {
-      // 直接从 digits_ 提取整数值，无需十进制转换
-      uint64_t n_val = mant.digits()[0];
-      if (n_val <= 1000) {
-        // 使用二进制快速幂: O(log(n)) 次乘法
-        BigFloat result(1, work_prec);
-        BigFloat b = base;
-        b.set_precision(work_prec);
-        int64_t p = n_val;
-        while (p > 0) {
-          if (p & 1)
-            result *= b; // 当前位为 1 时乘入结果
-          b *= b;        // base 平方
-          p >>= 1;
-        }
-        result.set_precision(prec);
-        return result;
-      }
+
+    // 如果是非常庞大的整数，避免快速幂导致长时间阻塞，退化为 exp(N * ln(base))
+    if (mant.bit_length() > 31) {
+      BigFloat ln_base = ln(base.abs());
+      ln_base.set_precision(work_prec);
+      BigFloat exp_val = exponent;
+      exp_val.set_precision(work_prec);
+      return exp(exp_val * ln_base);
     }
+
+    // 使用二进制快速幂: O(log(n)) 次乘法
+    uint64_t n_val = mant.digits().empty() ? 0 : mant.digits()[0];
+    BigFloat result(1, work_prec);
+    BigFloat b = base;
+    b.set_precision(work_prec);
+    while (n_val > 0) {
+      if (n_val & 1)
+        result *= b; // 当前位为 1 时乘入结果
+      b *= b;        // base 平方
+      n_val >>= 1;
+    }
+    result.set_precision(prec);
+    return result;
   }
 
-  // --- 通用路径: exp(exponent × ln(base)) ---
-  BigFloat ln_base = ln(base.abs());
-  ln_base.set_precision(work_prec);
-  BigFloat exp_val = exponent;
-  exp_val.set_precision(work_prec);
+  // --- 通用路径: 指数拆分防级联放大 ---
+  BigFloat N = exponent.floor();
+  BigFloat f = exponent - N;
 
-  return exp(exp_val * ln_base);
+  // 1. 整数部分使用无损的内部快速幂计算
+  BigFloat int_part_result = pow(base, N); // N 一定是整数，会走上面的整数分支
+
+  // 2. 小数部分走 exp(f * ln(base))
+  // 因为 |f| < 1，它会缩小 ln 的误差，而不是无端放大
+  BigFloat f_part_result(1, work_prec);
+  if (!f.is_zero()) {
+    BigFloat ln_base = ln(base.abs());
+    ln_base.set_precision(work_prec);
+    f.set_precision(work_prec);
+    f_part_result = exp(f * ln_base);
+  }
+
+  BigFloat final_result = int_part_result * f_part_result;
+  final_result.set_precision(prec);
+  return final_result;
 }
 
 // ============================================

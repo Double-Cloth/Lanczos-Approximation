@@ -19,14 +19,17 @@
  *   - verification.txt : 验证结果
  */
 
+#include "BigFloat.h"
 #include "lanczos.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
-
+#include <random>
 #include <string>
 #include <vector>
 
@@ -172,17 +175,17 @@ static std::string fix_expected_value(const std::string &computed,
  * @param g_str         Lanczos 参数 g (字符串形式)
  * @param precision     验证精度（十进制位数）
  * @param max_tests     最大测试点数，若为负则测试所有不过滤数量的点
+ * @param start_row     从第几行开始读取 (1-indexed)，默认为 1
+ * @param random_sample 是否随机抽取 max_tests 个测试点
  * @param threshold_str 相对误差阈值百分比 (如 "1e-6")
  * @param output_dir    输出目录，若指定则将结果同时写入 "verification.txt"
  * @param filter_z_le_50 是否只测试 z <= 50 的点
  */
-static void run_csv_verification(const std::string &csv_path,
-                                 const std::vector<BigFloat> &coeffs, int n,
-                                 const std::string &g_str, int precision,
-                                 int max_tests,
-                                 const std::string &threshold_str,
-                                 const std::string &output_dir,
-                                 bool filter_z_le_50) {
+static void run_csv_verification(
+    const std::string &csv_path, const std::vector<BigFloat> &coeffs, int n,
+    const std::string &g_str, int precision, int max_tests, int start_row,
+    bool random_sample, const std::string &threshold_str,
+    const std::string &output_dir, bool filter_z_le_50) {
   std::cout << "\n=== Loading test data from " << csv_path
             << " ===" << std::endl;
 
@@ -214,22 +217,46 @@ static void run_csv_verification(const std::string &csv_path,
 
   std::cout << "Loaded " << test_data.size() << " test entries." << std::endl;
 
-  std::vector<TestEntry> selected;
-  if (filter_z_le_50) {
-    for (auto &entry : test_data) {
+  std::vector<TestEntry> candidate_data;
+  int current_row = 1;
+
+  for (auto &entry : test_data) {
+    if (current_row < start_row) {
+      current_row++;
+      continue;
+    }
+
+    if (filter_z_le_50) {
       BigFloat z_val = BigFloat::from_string(entry.z_str, 64);
       if (!z_val.is_negative() && !z_val.is_zero() &&
           z_val <= BigFloat(50, 64)) {
-        selected.push_back(entry);
+        candidate_data.push_back(entry);
       }
+    } else {
+      candidate_data.push_back(entry);
     }
-    std::cout << "Selected " << selected.size() << " test points (z <= 50)."
+    current_row++;
+  }
+
+  std::vector<TestEntry> selected;
+  if (random_sample && max_tests > 0 &&
+      max_tests < (int)candidate_data.size()) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::sample(candidate_data.begin(), candidate_data.end(),
+                std::back_inserter(selected), max_tests, gen);
+    std::cout << "Randomly selected " << selected.size()
+              << " test points from row " << start_row << " onwards."
               << std::endl;
   } else {
     for (size_t i = 0;
-         i < test_data.size() && (max_tests < 0 || (int)i < max_tests); i++) {
-      selected.push_back(test_data[i]);
+         i < candidate_data.size() && (max_tests < 0 || (int)i < max_tests);
+         i++) {
+      selected.push_back(candidate_data[i]);
     }
+    std::cout << "Selected " << selected.size()
+              << " test points sequentially from row " << start_row << "."
+              << std::endl;
   }
 
   int prec_bits = static_cast<int>(std::ceil(precision * 3.3219281)) + 64;
@@ -241,9 +268,12 @@ static void run_csv_verification(const std::string &csv_path,
   std::cout << std::endl;
 
   std::ofstream vout;
+  std::string verify_path = "verification.txt";
   if (!output_dir.empty()) {
-    std::string verify_path = output_dir + "/verification.txt";
-    vout.open(verify_path);
+    verify_path = output_dir + "/verification.txt";
+  }
+  vout.open(verify_path);
+  if (vout.is_open()) {
     vout << "# Lanczos Gamma Function Verification Results" << std::endl;
     vout << "# Parameters: n=" << n << ", g=" << g_str
          << ", digits=" << precision << std::endl;
@@ -256,11 +286,6 @@ static void run_csv_verification(const std::string &csv_path,
          << std::endl;
   }
 
-  std::cout << std::setw(12) << "z" << std::setw(30) << "computed"
-            << std::setw(30) << "expected" << std::setw(22) << "abs_error"
-            << std::setw(22) << "relative_error%" << std::endl;
-  std::cout << std::string(116, '-') << std::endl;
-
   int total_tests = static_cast<int>(selected.size());
   int pass_count = 0;
   int failed_count = 0;
@@ -272,6 +297,13 @@ static void run_csv_verification(const std::string &csv_path,
   BigFloat sum_abs_error(0, prec_bits);
 
   int display_digits = precision;
+
+  auto t_start = std::chrono::high_resolution_clock::now();
+
+  // ETA 状态预留
+  auto last_time = t_start;
+  int last_count = 0;
+  double ema_ms_per_step = 0.0;
 
   for (int idx = 0; idx < total_tests; idx++) {
     auto &entry = selected[idx];
@@ -351,23 +383,33 @@ static void run_csv_verification(const std::string &csv_path,
 
     std::cout << "\r" << std::string(80, ' ') << "\r";
 
-    if (!output_dir.empty()) {
-      std::cout << "  Gamma(" << entry.z_str << "):" << std::endl
-                << "    computed = " << computed_str << std::endl
-                << "    expected = " << expected_short << "..." << std::endl
-                << "    abs err  = " << abs_err_str << std::endl
-                << "    rel err  = " << rel_err_str << "%" << std::endl;
+    if (vout.is_open()) {
       vout << entry.z_str << ", " << computed_str << ", " << expected_short
-           << "..."
-           << ", " << abs_err_str << ", " << rel_err_str << "%" << std::endl;
-    } else {
-      std::cout << std::setw(12) << entry.z_str << std::setw(30)
-                << computed_out_str << std::setw(30) << expected_out_str
-                << std::setw(22) << abs_err_str << std::setw(22) << rel_err_str
-                << std::endl;
+           << "..." << ", " << abs_err_str << ", " << rel_err_str << "%"
+           << std::endl;
     }
 
+    // 更新滑动窗口 ETA
     int current = idx + 1;
+    if (current - last_count >= std::max(1, total_tests / 20) ||
+        current == total_tests) {
+      auto now = std::chrono::high_resolution_clock::now();
+      std::chrono::duration<double, std::milli> window_diff = now - last_time;
+      double current_ms_per_step = window_diff.count() / (current - last_count);
+
+      if (ema_ms_per_step == 0.0) {
+        ema_ms_per_step = current_ms_per_step;
+      } else {
+        ema_ms_per_step = 0.7 * ema_ms_per_step + 0.3 * current_ms_per_step;
+      }
+
+      last_time = now;
+      last_count = current;
+    }
+
+    double remaining_ms = ema_ms_per_step * (total_tests - current);
+
+    // 绘制基于回车的极简动态进度条
     int progress_percent = (current * 100) / total_tests;
     int bar_pos = (50 * current) / total_tests;
     std::cout << "[";
@@ -380,16 +422,26 @@ static void run_csv_verification(const std::string &csv_path,
         std::cout << " ";
     }
     std::cout << "] " << progress_percent << " % (" << current << "/"
-              << total_tests << ")" << std::flush;
+              << total_tests << ") ";
+    if (current < total_tests && ema_ms_per_step > 0) {
+      std::cout << "ETA: " << std::fixed << std::setprecision(1)
+                << (remaining_ms / 1000.0) << "s  ";
+    } else if (current == total_tests) {
+      std::cout << "ETA: 0.0s  ";
+    }
+    std::cout << std::flush;
   }
 
   std::cout << "\r" << std::string(80, ' ') << "\r";
+  auto t_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> ms = t_end - t_start;
 
-  if (!output_dir.empty() && vout.is_open()) {
+  if (vout.is_open()) {
     vout << "#" << std::endl;
     vout << "# ==============================" << std::endl;
     vout << "# Summary" << std::endl;
     vout << "# ==============================" << std::endl;
+    vout << "# Time taken:         " << ms.count() << " ms" << std::endl;
     vout << "# Total tests:        " << total_tests << std::endl;
     vout << "# Passed (relative error <= " << threshold_str
          << "%): " << pass_count << "/" << total_tests << std::endl;
@@ -413,6 +465,8 @@ static void run_csv_verification(const std::string &csv_path,
   }
 
   std::cout << "\n=== Summary ===" << std::endl;
+  std::cout << "  Time taken:          " << ms.count() / 1000.0 << " s ("
+            << ms.count() << " ms)" << std::endl;
   std::cout << "  Total tests:         " << total_tests << std::endl;
   std::cout << "  Passed (relative error <= " << threshold_str
             << "%): " << pass_count << "/" << total_tests << std::endl;
@@ -445,21 +499,22 @@ int main(int argc, char *argv[]) {
   if (argc < 3) {
     std::cerr << "Usage:" << std::endl;
     std::cerr << "  Mode 1 (Generate): " << argv[0]
-              << " <n> <g> <digits> [output_dir] [csv_path]" << std::endl;
+              << " <n> <g> <digits> [--out dir] [--csv path]" << std::endl;
     std::cerr << "  Mode 2 (Evaluate): " << argv[0]
               << " eval <output_dir> <z_value> [display_digits]" << std::endl;
-    std::cerr << "  Mode 3 (Test):     " << argv[0]
-              << " test <n> <g> <digits> [csv_path] [max_tests] [threshold%]"
+    std::cerr << "  Mode 3 (Test):     " << argv[0] << "  " << argv[0]
+              << " test <n> <g> <digits> [--csv path] [--max N] [--start row] "
+                 "[--random] [--threshold %]"
               << std::endl;
     std::cerr << std::endl;
     std::cerr << "Example:" << std::endl;
     std::cerr << "  " << argv[0] << " 7 5.0 16" << std::endl;
     std::cerr << "  " << argv[0] << " eval output_n7_g5.0_d16 50.5"
               << std::endl;
-    std::cerr << "  " << argv[0] << " eval output_n7_g5.0_d16 50.5 50"
+    std::cerr << "  " << argv[0] << " test 7 5.0 16 --max 50 --random"
               << std::endl;
-    std::cerr << "  " << argv[0]
-              << " test 7 5.0 16 ../assets/real_gamma.csv 50 1e-6" << std::endl;
+    std::cerr << "  " << argv[0] << " test 7 5.0 16 --start 100 --max 5"
+              << std::endl;
     return 1;
   }
 
@@ -573,13 +628,32 @@ int main(int argc, char *argv[]) {
     std::string csv_path = "../assets/real_gamma.csv";
     int max_tests = 50;
     std::string threshold_str = "1e-6";
+    int start_row = 1;
+    bool random_sample = false;
 
-    if (argc >= 6)
-      csv_path = argv[5];
-    if (argc >= 7)
-      max_tests = std::atoi(argv[6]);
-    if (argc >= 8)
-      threshold_str = argv[7];
+    // 命名参数解析后退兼容版
+    for (int i = 5; i < argc; i++) {
+      std::string arg = argv[i];
+      if (arg == "--csv" && i + 1 < argc) {
+        csv_path = argv[++i];
+      } else if (arg == "--max" && i + 1 < argc) {
+        max_tests = std::atoi(argv[++i]);
+      } else if (arg == "--threshold" && i + 1 < argc) {
+        threshold_str = argv[++i];
+      } else if (arg == "--start" && i + 1 < argc) {
+        start_row = std::atoi(argv[++i]);
+      } else if (arg == "--random") {
+        random_sample = true;
+      } else {
+        // 后向兼容逻辑：如果不是 -- 开头，则按照原有的 positional 顺序映射
+        if (i == 5)
+          csv_path = arg;
+        else if (i == 6)
+          max_tests = std::atoi(arg.c_str());
+        else if (i == 7)
+          threshold_str = arg;
+      }
+    }
 
     if (n <= 0 || precision <= 0) {
       std::cerr << "Error: n and digits must be positive integers."
@@ -592,6 +666,16 @@ int main(int argc, char *argv[]) {
     std::cout << "Parameters: n=" << n << ", g=" << g_str
               << ", precision=" << precision << " decimal digits" << std::endl;
     std::cout << "CSV file: " << csv_path << std::endl;
+    if (random_sample) {
+      std::cout << "Selection: " << max_tests
+                << " random points starting from row " << start_row
+                << std::endl;
+    } else {
+      std::cout << "Selection: "
+                << ((max_tests < 0) ? "all" : std::to_string(max_tests))
+                << " sequential points starting from row " << start_row
+                << std::endl;
+    }
     int prec_bits = static_cast<int>(std::ceil(precision * 3.3219281)) + 64;
     BigFloat threshold = BigFloat::from_string(threshold_str, prec_bits);
 
@@ -603,17 +687,12 @@ int main(int argc, char *argv[]) {
     std::cout << "--- Computing Lanczos Coefficients ---" << std::endl;
     auto coeffs = compute_lanczos_coefficients(n, g_str, precision);
 
-    // 输出系数
-    std::cout << std::endl << "Coefficients:" << std::endl;
-    for (int i = 0; i < static_cast<int>(coeffs.size()); i++) {
-      std::cout << "  p[" << i
-                << "] = " << coeffs[i].to_decimal_string(precision + 5)
-                << std::endl;
-    }
+    // 仅提示系数构建完毕，不在终端刷屏输出详细数值
+    std::cout << "Coefficients computation complete." << std::endl;
 
     // 调用通用验证函数
     run_csv_verification(csv_path, coeffs, n, g_str, precision, max_tests,
-                         threshold_str, "", false);
+                         start_row, random_sample, threshold_str, "", false);
 
     return 0;
   }
@@ -633,20 +712,29 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // 确定输出目录（默认: output_n{n}_g{g}_d{digits}）
-  std::string output_dir;
-  if (argc >= 5) {
-    output_dir = argv[4];
-  } else {
-    // 使用 g_str 而非 double 避免精度丢失
-    output_dir = "output_n" + std::to_string(n) + "_g" + g_str + "_d" +
-                 std::to_string(digits);
+  std::string output_dir = "";
+  std::string csv_path = "../assets/real_gamma.csv";
+
+  // 命名参数解析后退兼容版
+  for (int i = 4; i < argc; i++) {
+    std::string arg = argv[i];
+    if (arg == "--out" && i + 1 < argc) {
+      output_dir = argv[++i];
+    } else if (arg == "--csv" && i + 1 < argc) {
+      csv_path = argv[++i];
+    } else {
+      // 后向兼容逻辑：如果不是 -- 开头，则按照原有的 positional 顺序映射
+      if (i == 4)
+        output_dir = arg;
+      else if (i == 5)
+        csv_path = arg;
+    }
   }
 
-  // CSV 验证文件路径
-  std::string csv_path = "../assets/real_gamma.csv";
-  if (argc >= 6) {
-    csv_path = argv[5];
+  // 若未指定 output_dir，给出默认命名
+  if (output_dir.empty()) {
+    output_dir = "output_n" + std::to_string(n) + "_g" + g_str + "_d" +
+                 std::to_string(digits);
   }
 
   // 创建输出目录
@@ -661,14 +749,7 @@ int main(int argc, char *argv[]) {
   // --- 计算系数 ---
   auto coeffs = compute_lanczos_coefficients(n, g_str, digits);
 
-  // 输出系数到控制台
-  std::cout << std::endl;
-  std::cout << "=== Computed Coefficients ===" << std::endl;
-  for (int i = 0; i < static_cast<int>(coeffs.size()); i++) {
-    std::cout << "  p[" << i << "] = " << coeffs[i].to_decimal_string(digits)
-              << std::endl;
-  }
-
+  // 仅保存系数到文件，不在终端刷屏输出详细数值
   // --- 保存系数文件 ---
   {
     std::string coeff_path = output_dir + "/coefficients.txt";
@@ -717,9 +798,9 @@ int main(int argc, char *argv[]) {
       "1e-" + std::to_string(effective_digits - 2), prec_bits);
   std::string threshold_str = threshold.to_decimal_string(2, true);
 
-  // 调用通用验证函数
-  run_csv_verification(csv_path, coeffs, n, g_str, digits, -1, threshold_str,
-                       output_dir, true);
+  // 调用通用验证函数, 对于 Generate 全量验证，传 start=1, random=false
+  run_csv_verification(csv_path, coeffs, n, g_str, digits, -1, 1, false,
+                       threshold_str, output_dir, true);
 
   std::cout << "\n=== Output Files ===" << std::endl;
   std::cout << "  " << output_dir

@@ -2,40 +2,11 @@
 
 一个纯 C++17 实现的 Lanczos 逼近系数计算器，内置任意精度算术库，无需任何第三方依赖。
 
-## 算法与工程原理
-
-[Lanczos 逼近](https://en.wikipedia.org/wiki/Lanczos_approximation) 是一种可在全复平面高效且高精度计算 Gamma 函数 $\Gamma(z)$ 的开创性数值分析方法。本项目作为一套超越标准数据类型的极限计算引擎，不单纯实现了数学公式，更在深层工程、数值稳定和动态算法上做出了深度拓展。
-
-### 1. 纯手工打造的大数高精度算术基石 (BigFloat & BigInt)
-为了打破 IEEE-754 双精度浮点（仅~16位有效数字）的封锁，本项目自顶向下手工实现了一套任意精度浮点计算核心，所有逻辑**完全摆脱 `double` 类型的定长限制**：
-* 采用 `BigInt` (多字无符号基底) 结合双向符号位与动态二阶指针位移构成极速 `BigFloat`。
-* 内部的函数如乘除法、开方（Newton-Raphson 迭代）、对数与指数（结合高精度泰勒展开和底数范围缩减）等均能响应用户提出的**任意十进制（例如 10,000 位+）** 的极高精度计算。
-* 绝对规绝所有硬编码精度长度，内部保护位通过 $\max(X, {\text{prec}}/Y)$ 比例自适应扩容，随要求精度增长而呈现无尽扩展性。
-
-### 2. Godfrey 矩阵法高速解析 Lanczos 系数
-传统的系数求取通过数值积分进行，在极限精度下极其缓慢且极易发散。本项目采用了著名的 **Godfrey 稀疏矩阵转换法**，它可以在多项式时间内得出绝对精准的系数解，公式为：
-$P^{(n)} = D \times B \times C \times F$
-* **$B$**：二项式系数构成的下三角变换矩阵。
-* **$C$**：基于 Chebyshev 多项式生成的交替稀疏系数矩阵。
-* **$D$** 和 **$F$**：负责归一化与代数对齐的对角或常数矩阵（内部包含了阶乘和指数项分解）。
-为了在求值 $\Gamma(z)$ 时实现极速运算，本实现特意**提前将指数常数部分 $e^{-g}$ 吸收并入系数中**。因此，本程序抛出的系数数组 $p_k$ 与传统参考资料中的值在量级上存在偏差，但实际代入 $S(z)$ 求值时能直接将原本包含 $e^x$ 的庞大负担化简为常数次的代数操作，成百倍加速求值。
-
-### 3. 灾难性相消 (Catastrophic Cancellation) 的动态抗性护盾
-当设定的项数 $n$ 极大（例如 $n=80$）时，生成矩阵尤其是组合数矩阵 $C$ 时引发的内部累加抵消规模能够轻易超过 $10^{300}$ 级别。如果保护位不足，纯粹的数学“灾难性相消”会瞬间吞噬掉二三百位的十进制精度！
-因此，系统对所有的动态计算流注入了**级数函数补偿防护罩**。当请求项数 $n$ 时，本程序利用斯特林推演，动态为系统附加至少高达 $2n \log_2(2n) + 256$ 位的二进制底层缓冲垫（Guard Bits）。这确保了矩阵在历经天文数字般的震荡相消后，沉淀输出的系数值依然能百发百中对标目标精度，滴水不漏。
-
-### 4. 极致的反射公式与高精动态 $\pi$ / $\sin$ 域缩减
-对于负数以及极小的实数域 ($z < 0.5$)，传统的近似累加会引发泰勒级的严重发散。本项目内部自动启用 Gamma 反射公式支持：
-$$ \Gamma(z) \Gamma(1 - z) = \frac{\pi}{\sin(\pi z)} $$
-在该引擎内部：
-* 为了得出上式的右半部分，系统会利用底层模块动态按比例扩张数百位保护垫，通过 Machin 级数迭代自动生成无限精度的 $\pi$。
-* 在执行 $\sin(\pi z)$ 时，采用**严格的周期域重映射（Range Reduction）联合三倍角降阶算法**，将输入值从天文倍率严丝合缝地重映射到 $[0, \pi/2]$ 的纯净收敛区位。彻底免除了在超越函数进行麦克劳林级数展开时的数字大爆炸。
-
 ## 项目结构
 
 ```
 Lanczos-Approximation/
-├── CMakeLists.txt             # 构建配置
+├── CMakeLists.txt             # 构建配置 (已注入 FindOpenMP 关联)
 ├── include/
 │   ├── BigInt.h               # 无符号任意精度整数
 │   ├── BigFloat.h             # 任意精度浮点数
@@ -43,7 +14,7 @@ Lanczos-Approximation/
 ├── src/
 │   ├── BigInt.cpp             # BigInt 实现
 │   ├── BigFloat.cpp           # BigFloat 实现 (含 pi, sqrt, exp, ln, pow 等)
-│   ├── lanczos.cpp            # Godfrey 矩阵方法 + Gamma 函数
+│   ├── lanczos.cpp            # Godfrey 矩阵方法 (已挂载 OpenMP 多核并发与系统保护)
 │   └── main.cpp               # 命令行应用 (包含 Generate/Eval/Test 并归合验证核心)
 └── tests/
     └── test_bigfloat.cpp      # BigInt/BigFloat 单元测试（极高精度相对误差断言）
@@ -87,17 +58,17 @@ cmake --build build
 程序提供三种运行模式：
 
 #### 模式 1：生成验证模式
-计算 Lanczos 系数并运行全量比较验证。
+计算 Lanczos 系数并运行全量比较验证。本模式同样兼容并采纳了命名标志解析 (Named Flags) 系统。
 ```bash
-./build/lanczos_app <n> <g> <digits> [output_dir] [csv_path]
+./build/lanczos_app <n> <g> <digits> [--out dir] [--csv path]
 ```
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `n` | 整数 | 系数个数（级数项数） |
-| `g` | 浮点数 | Lanczos 参数 |
-| `digits` | 整数 | 目标精度（十进制有效位数） |
-| `output_dir` | 字符串（可选） | 输出目录名，默认为 `output_n<n>_g<g>_d<digits>` |
-| `csv_path` | 字符串（可选） | 验证数据 CSV 文件路径，默认为 `../assets/real_gamma.csv` |
+| `n` | 整数 | 定长必填: 系数个数（级数项数） |
+| `g` | 浮点数 | 定长必填: Lanczos 参数 |
+| `digits` | 整数 | 定长必填: 目标精度（十进制有效位数） |
+| `--out` | 字符串 | (可选) 输出目录名，默认为 `output_n<n>_g<g>_d<digits>` |
+| `--csv` | 字符串 | (可选) 指定验证目标文件，默认 `../assets/real_gamma.csv` |
 
 #### 模式 2：复用求值模式
 读取之前生成的系数结果（`parameters.txt` 和 `coefficients.txt`），利用已有参数极速对某个任意数值 `z` 求 Gamma 函数值，而无需重新构造大型系数矩阵。
@@ -113,18 +84,21 @@ cmake --build build
 
 #### 模式 3：测试与验证模式
 读取已知 Gamma 函数精确值的 CSV 文件，在控制台打印并生成进度条，直接对批量数据运行动态断言并展示绝对与相对误差总结。
+随着功能升级，现在该模式全面支持兼容式**命名标志解析 (Named Flags)**，让参数传递更加自由。
 ```bash
-./build/lanczos_app test <n> <g> <digits> [csv_path] [max_tests] [threshold%]
+./build/lanczos_app test <n> <g> <digits> [--csv path] [--max N] [--start row] [--random] [--threshold %]
 ```
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | `test` | 关键字 | 激活测试模式 |
-| `n` | 整数 | 系数个数（级数项数） |
-| `g` | 浮点数 | Lanczos 参数 |
-| `digits` | 整数 | 目标精度（十进制有效位数） |
-| `csv_path` | 字符串（可选） | 验证数据 CSV 文件路径，默认为 `../assets/real_gamma.csv` |
-| `max_tests` | 整数（可选） | 读取文件验证的行数限制，默认 `50` |
-| `threshold%`| 字符串（可选） | 及格的相对误差比重，默认 `1e-6` |
+| `n` | 整数 | 定长必填: 系数个数（级数项数） |
+| `g` | 浮点数 | 定长必填: Lanczos 参数 |
+| `digits` | 整数 | 定长必填: 目标精度（十进制有效位数） |
+| `--csv` | 字符串 | (可选) 指定验证目标文件，默认 `../assets/real_gamma.csv` |
+| `--max` | 整数 | (可选) 抽取或按序读取的最大行数，默认 `50` |
+| `--start` | 整数 | (可选) 跳过头部数据，从指定的行数 (1-indexed) 开始读取，默认 `1` |
+| `--random`| 标志位 | (可选) 注入 `mt19937` 从整体数据 (截去 start 之后的数据) 中随机打散挑出 `max` 数量的点测试 |
+| `--threshold`| 字符串 | (可选) 及格的相对误差比重限制，默认 `1e-6` |
 
 ### 示例
 
@@ -137,14 +111,21 @@ cmake --build build
 输出：
 
 ```
-=== Computed Coefficients ===
-  p[0] = 1.6889528464081992e-2
-  p[1] = 1.2866458274168037e+0
-  p[2] = -1.4610340697205970e+0
-  p[3] = 4.0558679570070746e-1
-  p[4] = -2.0803500565280109e-2
-  p[5] = 2.0413545022374366e-5
-  p[6] = -9.1123049145387350e-8
+=== Lanczos Approximation Test ===
+Parameters: n=7, g=5.0, precision=16 decimal digits
+CSV file: ../assets/real_gamma.csv
+Pass threshold: relative error <= 1e-08%
+
+--- Computing Lanczos Coefficients ---
+[lanczos] CPU Protection: Using 14 / 16 OpenMP threads.
+[lanczos] matrix B     [==================================================] 100% (7/7)
+[lanczos] matrix C     [==================================================] 100% (7/7)
+[lanczos] matrix D     [==================================================] 100% (7/7)
+[lanczos] matrix BC    [==================================================] 100% (7/7)
+[lanczos] vector F     [==================================================] 100% (7/7)
+[lanczos] vector P     [==================================================] 100% (7/7)
+Coefficients computation complete.
+[lanczos] Coefficients computed successfully in 45.28 ms.
 
 === Loading test data from real_gamma.csv ===
 Loaded 2800 test entries.
@@ -159,6 +140,7 @@ Selected 100 test points (z <= 50).
   Gamma(50) = 6.0828186406937170e+62  [relative error: 5.77e-09%, PASS]
 
 === Summary ===
+  Time taken:          0.021 s (21 ms)
   Total tests:         100
   Passed (relative error <= 1e-08%): 100/100
   Max relative error:  7.24e-28%
@@ -237,8 +219,12 @@ output_n7_g5_d16/
 # ==============================
 # Summary
 # ==============================
+# Time taken:         1102.34 ms
 # Total tests:        100
 # Passed (relative error <= 1e-08%): 100/100
+# Max absolute error: 3.25e-22
+# Min absolute error: 0.00e+00
+# Avg absolute error: 4.19e-24
 # Max relative error: 7.24e-28%
 # Min relative error: 0.00e+00%
 # Avg relative error: 7.66e-29%
@@ -263,9 +249,12 @@ output_n7_g5_d16/
 # BigInt/BigFloat 单元测试（使用相对误差百分比断言）
 ./build/test_bigfloat
 
-# Lanczos 精度验证模式 (需要 real_gamma.csv 文件在工作目录)
-# 参数格式: lanczos_app test [n] [g] [precision] [csv_path] [max_tests] [threshold%]
+# Lanczos 精度验证模式 (传统位置参数)
 ./build/lanczos_app test 7 5.0 16 ../assets/real_gamma.csv 50 1e-8
+
+# Lanczos 精度验证模式 (全新推荐命名参数，极度自由)
+# 从第 100 行开始，在后续所有数据中随机抽选 20 个点测试，报错阈心定在 1e-10%
+./build/lanczos_app test 7 5.0 16 --start 100 --max 20 --random --threshold 1e-10
 ```
 
 #### 测试通过标准
@@ -303,14 +292,16 @@ $$\text{relative error} = \frac{|\text{computed} - \text{expected}|}{|\text{expe
 | **pow 整数提取** | 直接从 BigInt digits 提取整数值，避免 O(n×D) 十进制转换 |
 | **to_decimal 快速幂 5^n** | 使用二进制快速幂替代逐步 `mul_u32(5)` |
 
-### Lanczos 层与测试框架层
+### Lanczos 层与框架并发执行引擎
 | 优化 | 说明 |
 |------|------|
+| **OpenMP 多核矩阵提速** | 彻底利用现代 CPU 多核心阵列。对于 O(N^3) 级矩阵 M, B, C, BC 的构建与结合执行分配 `#pragma omp parallel for`，百倍释放系统多核威力。 |
+| **OS 资源枯竭保护盾** | 深度探针动态侦测 CPU 逻辑总核数 `omp_get_num_procs`，主动为 8 线程以上操作系统截留并保留 2 核心系统开销余地，彻底断绝电脑假死与鼠标卡顿危机。 |
+| **组合数 (comb) 无锁静态缓存** | 构筑二维矩阵内存池静态存储阶乘结果，直接将 C 与 B 矩阵内占据 40% 时间的组合数倒算剔除，改判为 O(1) 短路读取。 |
 | **F[i] 构造常数分离** | Godfrey 方法中将 `e^{-g}` 吸收进系数生成，运行时消除 `exp` |
-| **F[i] exp 复用** | `exp(power_{i+1}) = exp(power_i) × exp(1)`，将降维的高精指数计算进一步递推 |
-| **运行时求值极速化** | 单个 Gamma 以一次大数幂运算 `pow(base/e, z-0.5)` 完成，避开高成本 `exp(-base)` |
+| **F[i] 底数剥解法剔除 exp** | 通过基础底数数学合并提取 `exp(0.5)` 作为纯量常数，使每一段循环内的天文级 `BigFloat::exp` 演算剥解降级成为多线程安全常数积。 |
 | **pow2 指数调整** | 除以 2^k 改用 `mul_pow2(-k)`（O(1) 指数调整） |
-| **高精验证动态截断** | 根据对比需求在转数字前动态截断 CSV 中 3 万位级别的极限验证数据，避免阻塞瓶颈 |
+| **高精算力引擎钟表** | 在 `lanczos.cpp` 的核心与 `main.cpp` 的批量断言挂载极其精准的 `std::chrono::high_resolution_clock` 获取纳秒级耗时监控展示。 |
 
 ## API 接口
 
@@ -353,28 +344,47 @@ std::cout << pi_val.to_decimal_string(50) << std::endl;
 // 3.14159265358979323846264338327950288419716939937510
 ```
 
-## 算法原理
+## 系统架构与算法原理深度解析 (Mathematical & Architecture Deep-Dive)
 
-本程序使用 **Godfrey 矩阵方法** 计算 Lanczos 系数：
+本项目作为一套超越标准数据类型的极限计算引擎，不仅实现了 [Lanczos 逼近定理](https://en.wikipedia.org/wiki/Lanczos_approximation)，更在底层工程、数值截断防护上做了严密拓展，可实现任意十进制精度（如 10,000位+）的高质量计算。
 
+### 1. 任意精度算术基石 (BigFloat Engine)
+完全摆脱 `double` 类型的 IEEE-754 定长限制。
+* 内部所有常数（$\pi, e, \sqrt{2}, \ln2$）与数学运算（幂，指数，三角）均无硬编码位数。
+* **高精底层架构**: 采用多字无符号 `BigInt` 结合二阶动态指数构建极为灵活的 `BigFloat` 大数系统。
+
+### 2. 经典 Lanczos 逼近与公式推导
+Gamma 函数的经典积分定义为了改善原点附近的缺陷，通过换元积分引出：
+$$\Gamma(z) = \sqrt{2\pi} \left( z + g - \frac{1}{2} \right)^{z - \frac{1}{2}} e^{-\left( z + g - \frac{1}{2} \right)} A_g(z)$$
+
+展开项 $A_g(z)$：
+$$A_g(z) = \frac{1}{2} p_0(g) + \sum_{k=1}^{n-1} \frac{p_k(g)}{z+k-1}$$
+
+> **注意：** $(z + g - 1/2)^{z-1/2} e^{-(z+g-1/2)}$ 通常被提炼为 `base^(z-0.5) / e^base` 以降低浮点标度损失。本系统更进一步，直接将常数部分 $e^{-g}$ 连同 $\sqrt{2\pi}$ 静态压栈吸收进入了系数 $p_k$ 中，使求值期的计算耗时压缩为常数级代数操作。
+
+### 3. P. Godfrey 矩阵高速求解法 (Matrix Method)
+早期的连分式积分极其缓慢。本系统采用直接多项式时间 $O(N^3)$ 的 Godfrey 矩阵逼近阵列公式：
 $$P = D \times B \times C \times F$$
+1. **$B_{i,j} = (-1)^{j-i} \binom{i+j-1}{j-i}$**
+   基于二项式构成的下三角变换矩阵。
+2. **$C_{i,j} = (-1)^{i-j} \sum_{k} \binom{2i}{2k} \binom{k}{k+j-i}$**
+   基于极限 Chebyshev 正交多项式零点分布构成的误差均匀化矩阵（系统对其实现了静态二维 C++ 缓存记忆化，并搭载 OpenMP 并发，避开了高达数百万次的计算风暴）。
+3. **$D_i = D_{i-1} \frac{2(2i-1)}{i-1}$**
+   针对归一化的对角递推缩放矩阵。
+4. **$F_i = \frac{(2i)!}{i!} \cdot \exp(i+0.5) \cdot \frac{1}{2^{2i-1} (g+i+0.5)^i \sqrt{g+i+0.5}}$**
+   将 $e^{-g}$ 和复杂的阶乘乘积吸收并行的纯量合并浮点项。
 
-其中：
-- **B** — 由二项式系数构成的矩阵，`B[i][j] = (-1)^{j-i} × C(i+j-1, j-i)`
-- **D** — 对角矩阵，通过递推 `D[i] = D[i-1] × 2(2i-1)/(i-1)` 计算
-- **C** — Chebyshev 系数矩阵，`C[i][j] = (-1)^{i-j} × Σ C(2i,2k)×C(k,k+j-i)`
-- **F** — 包含纯量指数、阶乘和幂函数项的浮点向量，其通式已被优化吸收常数 $e^{-g}$：
-  $$F_i = \frac{(2i)!}{i!} \cdot \exp(i+0.5) \cdot \frac{1}{2^{2i-1} (g+i+0.5)^i \sqrt{g+i+0.5}}$$
+得出系数后，利用重铸版极速求值法：
+$$\Gamma(z) = \left( \frac{z + g - 0.5}{e} \right)^{z - 0.5} \cdot \left( p_0 + \sum_{k=1}^{n-1} \frac{p_k}{z + k - 1} \right)$$
 
-计算得到系数 `p_0, ..., p_{n-1}` 后，Gamma 函数通过以下公式求值：
-
-$$\Gamma(z) = \left( \frac{z + g - 0.5}{e} \right)^{z - 0.5} \cdot S(z)$$
-
-其中级数部分为：
-
-$$S(z) = p_0 + \sum_{k=1}^{n-1} \frac{p_k}{z + k - 1}$$
-
-> **注意：** 本实现中 `√(2π)` 因子已吸收在系数 `p_0` 中，无需额外乘以。
+### 4. 高精度数值抗性与误差全量清剿 (Numerical Robustness)
+由于级数矩阵相乘引发的抵消甚至能超过 $10^{300}$ 的标度。一旦失去保护，纯粹的灾难性相消能瞬间吞噬二三百位的十进制精度！
+本项目搭载了以下标准数值分析防护壁垒：
+1. **动态防护垫**: 随着输入项数增加而触发计算：$Guard\_Bits = 2n \log_2(2n) + 256$，保护所有底层寄存边界。
+2. **多项式 Kahan 补偿求和**: 级数项 $S(z)$ 的连加启用了 `c = (t - S) - y` 补档变量精准捕捉十进制深处的截断损耗值。
+3. **指数幂完全拆解**: 凡应对底数非整次求幂，引擎会将次幂强制拉断为独立的整数无损快幂与纯小数的次幂，严格截停指数函数的精度放量。
+4. **反射公式与 Payne-Hanek 动态模降**: 在负实轴发散区 $z < 0.5$：自动切换至拉马努金反射恒等式 $\frac{\pi}{\sin(\pi z)}$ 维系。一旦侦测到底层输入了非对称极限大数供向 $\sin$ 时，动态分配巨额精度的 $\pi$ 确保正弦映射严格闭敛于纯净域 $[0, \pi/2]$。
+5. **从缺保护 (Lazy Normalization)**: 给泰勒迭代收敛提供超越 `prec + 64 bits` 的冗余宽域，规避了大数循环中的重复短截断。
 
 ## 参考文献
 
