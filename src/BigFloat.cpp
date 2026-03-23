@@ -706,7 +706,7 @@ BigFloat BigFloat::sqrt(const BigFloat &x) {
     throw std::runtime_error("sqrt of negative number");
 
   int prec = x.precision();
-  int guard = std::max(64, prec / 10);
+  int guard = std::max(256, prec / 4);
   int work_prec = prec + guard; // 动态保护位
 
   // --- 初始估计: 直接构造初步的粗略量级 ---
@@ -903,7 +903,7 @@ BigFloat BigFloat::exp(const BigFloat &x) {
     return BigFloat(1, x.precision());
 
   int prec = x.precision();
-  int guard = std::max(128, prec / 8);
+  int guard = std::max(256, prec / 4);
   int work_prec = prec + guard; // 保护位抵消平方累积误差
 
   BigFloat val = x;
@@ -994,7 +994,7 @@ BigFloat BigFloat::ln(const BigFloat &x) {
     throw std::runtime_error("ln of non-positive number");
 
   int prec = x.precision();
-  int guard = std::max(128, prec / 8);
+  int guard = std::max(256, prec / 4);
   int work_prec = prec + guard; // 动态保护位
 
   // --- 步骤 1: 范围缩减 ---
@@ -1112,7 +1112,7 @@ BigFloat BigFloat::pow(const BigFloat &base, const BigFloat &exponent) {
     return BigFloat(0, base.precision());
 
   int prec = std::max(base.precision(), exponent.precision());
-  int guard = std::max(128, prec / 8);
+  int guard = std::max(256, prec / 4);
   int work_prec = prec + guard;
 
   // --- 检查指数是否完全为整数 ---

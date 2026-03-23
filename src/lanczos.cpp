@@ -7,7 +7,7 @@
  *
  * Lanczos 近似公式（直接计算 Γ(z)）:
  *   base = z + g - 0.5
- *   S(z) = p₀ + Σ_{k=1}^{n-1} p_k / (z + k - 1)
+ *   S(z) = p₀ + Σ_{k=1}^{n} p_k / (z + k - 1)
  *   Γ(z) = base^(z-0.5) × e^(−base) × S(z)
  *
  * Godfrey 矩阵分解:
@@ -278,12 +278,16 @@ struct SignedBigInt {
 std::vector<BigFloat> compute_lanczos_coefficients(int n,
                                                    const std::string &g_str,
                                                    int decimal_digits) {
+  // 与参考实现对齐: N 表示最高系数索引，实际系数个数为 N+1
+  int terms = n + 1;
+
   // 将十进制精度转换为二进制位数
   int bits = static_cast<int>(std::ceil(decimal_digits * 3.3219281)) +
              std::max(64, decimal_digits / 10);
   // 由于项数增加会导致矩阵运算中的阶乘级振荡（灾难性相消）
   // 保护位需随 n 动态极大增加: 至少需要 2n*log2(2n) 位的额外绝对精度
-  int guard_bits = 256 + static_cast<int>(2.0 * 2 * n * std::log2(2 * n));
+  int guard_bits =
+      256 + static_cast<int>(2.0 * 2 * terms * std::log2(2 * terms));
   int work_bits = bits + guard_bits;
 
   // 从字符串构造 g（保持全精度，不经过 double）
@@ -318,8 +322,8 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
 #pragma omp atomic capture
     current = ++completed_count;
 
-    int progress = (current * 100) / n;
-    int bar_pos = (50 * current) / n;
+    int progress = (current * 100) / terms;
+    int bar_pos = (50 * current) / terms;
 
 // 控制台输出上锁，防止多线程重影乱码
 #pragma omp critical
@@ -328,12 +332,12 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
       std::chrono::duration<double, std::milli> diff_from_last =
           now - omp_last_time;
 
-      if (diff_from_last.count() >= 500.0 || current == n) {
+      if (diff_from_last.count() >= 500.0 || current == terms) {
         std::chrono::duration<double, std::milli> elapsed = now - t_start;
-        if (elapsed.count() >= 100.0 || current == n) {
+        if (elapsed.count() >= 100.0 || current == terms) {
           // Mathematical extrapolation relying on step complexity integral
           double work_ratio =
-              std::pow(static_cast<double>(current) / n, complexity + 1.0);
+              std::pow(static_cast<double>(current) / terms, complexity + 1.0);
           double projected_total_ms = elapsed.count() / work_ratio;
           omp_ema_ms = projected_total_ms -
                        elapsed.count(); // store permanently to prevent jitter
@@ -353,20 +357,21 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
         else
           std::cout << " ";
       }
-      std::cout << "] " << progress << "% (" << current << "/" << n << ") ";
+      std::cout << "] " << progress << "% (" << current << "/" << terms
+            << ") ";
 
       auto total_elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(now - t_start)
               .count();
-      if (current < n && total_elapsed >= 500) {
+      if (current < terms && total_elapsed >= 500) {
         std::cout << "ETA: " << std::fixed << std::setprecision(1)
                   << (omp_ema_ms / 1000.0) << "s   ";
-      } else if (current == n) {
+      } else if (current == terms) {
         std::cout << "ETA: 0.0s   ";
       }
       std::cout << std::flush;
 
-      if (current == n) {
+      if (current == terms) {
         omp_ema_ms = 0.0;
         omp_last_count = 0;
         t_start = std::chrono::high_resolution_clock::
@@ -378,14 +383,15 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   };
 
   // ========== 步骤 0: 预计算组合数缓存以免多线程锁竞争 ==========
-  precompute_comb_cache(4 * n); // 组合数最大会用到 C(2i, 2k)，即最大 4n
+  precompute_comb_cache(4 * terms); // 组合数最大会用到 C(2i, 2k)，即最大 4n
 
   // ========== 步骤 1: 构造矩阵 B (n × n) ==========
-  std::vector<std::vector<SignedBigInt>> B(n, std::vector<SignedBigInt>(n));
+  std::vector<std::vector<SignedBigInt>> B(terms,
+                                           std::vector<SignedBigInt>(terms));
   int b_count = 0;
 #pragma omp parallel for schedule(dynamic)
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
+  for (int i = 0; i < terms; i++) {
+    for (int j = 0; j < terms; j++) {
       if (i == 0) {
         B[i][j] = {BigInt(1), false}; // 第一行全 1
       } else if (j >= i) {
@@ -402,11 +408,11 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
 
   // ========== 步骤 2: 构造 Chebyshev 矩阵 C (n × n) ==========
   std::vector<std::vector<BigFloat>> Cmat(
-      n, std::vector<BigFloat>(n, BigFloat(0, work_bits)));
+      terms, std::vector<BigFloat>(terms, BigFloat(0, work_bits)));
   int c_count = 0;
 #pragma omp parallel for schedule(dynamic)
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
+  for (int i = 0; i < terms; i++) {
+    for (int j = 0; j < terms; j++) {
       if (i == 0 && j == 0) {
         // 特殊元素: C[0][0] = 0.5
         Cmat[0][0] = BigFloat(1, work_bits) / BigFloat(2, work_bits);
@@ -431,16 +437,16 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   }
 
   // ========== 步骤 3: 构造对角矩阵 D (n × n) ==========
-  std::vector<BigFloat> D(n, BigFloat(0, work_bits));
+  std::vector<BigFloat> D(terms, BigFloat(0, work_bits));
   int d_count = 0;
   D[0] = BigFloat(1, work_bits);
-  if (n > 1) {
+  if (terms > 1) {
     D[1] = BigFloat(-1, work_bits);
   }
   print_prog_omp("Matrix D", d_count, 0);
-  if (n > 1)
+  if (terms > 1)
     print_prog_omp("Matrix D", d_count, 0);
-  for (int i = 2; i < n; i++) {
+  for (int i = 2; i < terms; i++) {
     // D[i] = D[i−1] × 2(2i−1) / (i−1)
     D[i] = D[i - 1] * BigFloat(2 * (2 * i - 1), work_bits);
     D[i] = D[i] / BigFloat(i - 1, work_bits);
@@ -452,20 +458,25 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   // 先计算 BC = B × C（标准矩阵乘法）
   // BC[i][j] = Σ_k B[i][k] × C[k][j]
   std::vector<std::vector<BigFloat>> BC(
-      n, std::vector<BigFloat>(n, BigFloat(0, work_bits)));
+      terms, std::vector<BigFloat>(terms, BigFloat(0, work_bits)));
   int bc_count = 0;
 #pragma omp parallel for schedule(dynamic)
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
+  for (int i = 0; i < terms; i++) {
+    for (int j = 0; j < terms; j++) {
       BigFloat sum(0, work_bits);
-      for (int k = 0; k < n; k++) {
+      BigFloat comp(0, work_bits); // Kahan 补偿项，缓解正负项相消
+      for (int k = 0; k < terms; k++) {
         if (B[i][k].val.is_zero())
           continue; // 跳过零元素（稀疏优化）
         // 将 SignedBigInt 转为 BigFloat
         BigFloat b_ik = BigFloat::from_bigint(B[i][k].val, work_bits);
         if (B[i][k].neg)
           b_ik = -b_ik;
-        sum += b_ik * Cmat[k][j];
+        BigFloat term = b_ik * Cmat[k][j];
+        BigFloat y = term - comp;
+        BigFloat t = sum + y;
+        comp = (t - sum) - y;
+        sum = t;
       }
       BC[i][j] = sum;
     }
@@ -475,19 +486,23 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
 
   // M[i][j] = D[i] × BC[i][j]
   std::vector<std::vector<BigFloat>> M(
-      n, std::vector<BigFloat>(n, BigFloat(0, work_bits)));
+      terms, std::vector<BigFloat>(terms, BigFloat(0, work_bits)));
   int m_count = 0;
 #pragma omp parallel for schedule(static)
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
+  for (int i = 0; i < terms; i++) {
+    for (int j = 0; j < terms; j++) {
       M[i][j] = D[i] * BC[i][j];
     }
     print_prog_omp("Matrix M", m_count, 0); // O(N) 单行固定耗时，p = 0
   }
-  print_prog_omp("Matrix M", m_count, 0); // 手动强制闭环
-
   // ========== 步骤 5: 构造向量 F (高精度浮点) ==========
   BigFloat bf_half = BigFloat(1, work_bits) / BigFloat(2, work_bits);
+
+  // F 向量包含 exp/sqrt/pow 链路，是系数末位误差的主要来源。
+  // 在该阶段临时提升位宽，最后再回落到 work_bits。
+  int f_work_bits = work_bits + std::max(256, bits / 2);
+  BigFloat bf_g_f = BigFloat::from_string(g_str, f_work_bits);
+  BigFloat bf_half_f = BigFloat(1, f_work_bits) / BigFloat(2, f_work_bits);
 
   // 在公式 F[i] = (2i)!/(i!) × exp(i+0.5) / 2^(2i-1) / (g+i+0.5)^i /
   // sqrt(g+i+0.5) 中 我们可以通过代数运算彻底避开 exp(i+0.5)
@@ -497,18 +512,18 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   // exp，而是让各线程仅算底数与常数。
   // 但为了保留原定精度并利用现成的底数分离法：我们只计算
   // exp(i+0.5)，由于不希望线程串行污染：
-  BigFloat exp_one = BigFloat::exp(BigFloat(1, work_bits));
-  BigFloat exp_half = BigFloat::exp(bf_half);
+  BigFloat exp_one = BigFloat::exp(BigFloat(1, f_work_bits));
+  BigFloat exp_half = BigFloat::exp(bf_half_f);
 
-  std::vector<BigFloat> F(n);
+  std::vector<BigFloat> F(terms);
   int f_count = 0;
 #pragma omp parallel for schedule(dynamic)
-  for (int i = 0; i < n; i++) {
-    BigFloat bi(i, work_bits);
-    BigFloat base = bf_g + bi + bf_half; // base = g + i + 0.5
+  for (int i = 0; i < terms; i++) {
+    BigFloat bi(i, f_work_bits);
+    BigFloat base = bf_g_f + bi + bf_half_f; // base = g + i + 0.5
 
     // --- (2i)! / i! ---
-    BigFloat fact_ratio(1, work_bits);
+    BigFloat fact_ratio(1, f_work_bits);
     {
       BigInt f2i(1); // 计算 (2i)!
       for (int k = 2; k <= 2 * i; k++) {
@@ -519,10 +534,10 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
         fi = fi.mul_u32(static_cast<uint32_t>(k));
       }
       if (i == 0) {
-        fact_ratio = BigFloat(1, work_bits); // 0!/0! = 1
+        fact_ratio = BigFloat(1, f_work_bits); // 0!/0! = 1
       } else {
-        BigFloat bf_f2i = BigFloat::from_bigint(f2i, work_bits);
-        BigFloat bf_fi = BigFloat::from_bigint(fi, work_bits);
+        BigFloat bf_f2i = BigFloat::from_bigint(f2i, f_work_bits);
+        BigFloat bf_fi = BigFloat::from_bigint(fi, f_work_bits);
         fact_ratio = bf_f2i / bf_fi;
       }
     }
@@ -540,7 +555,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     int pow2_shift = -(2 * i - 1);
 
     // --- (g+i+0.5)^i ---
-    BigFloat base_pow_i(1, work_bits);
+    BigFloat base_pow_i(1, f_work_bits);
     if (i > 0) {
       base_pow_i = BigFloat::pow(base, bi);
     }
@@ -553,22 +568,28 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     Fi = Fi.mul_pow2(pow2_shift); // 高效乘除 2 的幂
     Fi = Fi / base_pow_i;
     Fi = Fi / base_sqrt;
+    Fi.set_precision(work_bits);
     F[i] = Fi;
     print_prog_omp("Vector F", f_count,
                    1); // f的超越函数极慢，相当于 p=1 级增长
   }
 
   // ========== 步骤 6: 计算 P = M × F (矩阵-向量乘法) ==========
-  std::vector<BigFloat> P(n);
+  std::vector<BigFloat> P(terms);
   int p_count = 0;
 #pragma omp parallel for schedule(static)
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < terms; i++) {
     BigFloat sum(0, work_bits);
-    for (int j = 0; j < n; j++) {
-      sum += M[i][j] * F[j];
+    BigFloat comp(0, work_bits); // Kahan 补偿项
+    for (int j = 0; j < terms; j++) {
+      BigFloat term = M[i][j] * F[j];
+      BigFloat y = term - comp;
+      BigFloat t = sum + y;
+      comp = (t - sum) - y;
+      sum = t;
     }
     P[i] = sum;
-    P[i].set_precision(bits);               // 截断到目标精度
+    // 保留 work_bits，避免此处二次舍入导致末位偏差。
     print_prog_omp("Vector P", p_count, 0); // p=0 固定耗时
   }
 
@@ -589,7 +610,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
  * @details 计算公式:
  *
  *   base = z + g - 0.5
- *   S(z) = p₀ + Σ_{k=1}^{n-1} p_k / (z + k - 1)
+ *   S(z) = p₀ + Σ_{k=1}^{n} p_k / (z + k - 1)
  *       = p₀ + p₁/z + p₂/(z+1) + p₃/(z+2) + ...
  *   Γ(z) = (base/e)^(z-0.5) × S(z)
  *
@@ -640,7 +661,7 @@ BigFloat lanczos_gamma(const BigFloat &z, const std::vector<BigFloat> &coeffs,
   // 计算 base = z + g - 0.5
   BigFloat base = zz + bf_g - half;
 
-  // 计算 S(z) = p[0] + Σ_{k=1}^{n-1} p[k] / (z + k - 1)
+  // 计算 S(z) = p[0] + Σ_{k=1}^{n} p[k] / (z + k - 1)
   // 使用 Kahan Summation 阻断灾难性大数相消导致的低位精度丢失
   BigFloat S = coeffs[0];
   S.set_precision(work_bits);

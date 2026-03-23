@@ -8,9 +8,9 @@
  *   Γ(z) = ( (z + g - 0.5) / e )^(z-0.5) × S(z)
  *
  * 其中:
- *   S(z) = p₀ + Σ_{k=1}^{n-1} p_k / (z + k - 1)
+ *   S(z) = p₀ + Σ_{k=1}^{n} p_k / (z + k - 1)
  *
- * 系数 p₀, p₁, ..., p_{n-1} 通过 Godfrey 矩阵方法计算:
+ * 系数 p₀, p₁, ..., p_n 通过 Godfrey 矩阵方法计算:
  *   P = D × B × C × F
  *
  * 其中:
@@ -39,11 +39,11 @@
  *
  * 使用 Godfrey 矩阵方法: P = D × B × C × F
  *
- * @param n              级数项数（输出 n 个系数 p_0 ... p_{n-1}）
+ * @param n              最高系数索引 N（输出 N+1 个系数 p_0 ... p_N）
  * @param g_str          Lanczos 参数 g 的字符串形式（如 "5.0"），
  *                       直接转为 BigFloat 以保持全精度
  * @param decimal_digits 计算精度（十进制有效位数）
- * @return               系数列表 {p_0, p_1, ..., p_{n-1}}
+ * @return               系数列表 {p_0, p_1, ..., p_n}
  */
 std::vector<BigFloat> compute_lanczos_coefficients(int n,
                                                    const std::string &g_str,

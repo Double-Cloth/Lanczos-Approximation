@@ -35,6 +35,42 @@
 
 namespace fs = std::filesystem;
 
+struct LanczosPreset {
+  int max_decimal_digits;
+  int n;
+  const char *g;
+};
+
+static LanczosPreset pick_recommended_preset(int digits) {
+  // 这些阈值对应常见精度等级: float/double/long double/quad。
+  static const LanczosPreset presets[] = {
+      {7, 6, "5.581"}, {16, 13, "13.144565"}, {19, 17, "17.0"},
+      {1000000, 24, "23.5"}};
+
+  for (const auto &p : presets) {
+    if (digits <= p.max_decimal_digits) {
+      return p;
+    }
+  }
+  return presets[3];
+}
+
+static void auto_upgrade_lanczos_params(int digits, int &n, std::string &g_str,
+                                        const char *mode_name) {
+  LanczosPreset rec = pick_recommended_preset(digits);
+  if (n >= rec.n) {
+    return;
+  }
+
+  std::cout << "[params] " << mode_name << ": requested digits=" << digits
+            << " with n=" << n << " may introduce visible bias." << std::endl;
+  std::cout << "[params] auto-upgrade to n=" << rec.n << ", g=" << rec.g
+            << " (recommended preset for this precision)." << std::endl;
+
+  n = rec.n;
+  g_str = rec.g;
+}
+
 // ============================================
 // CSV 解析辅助函数
 // ============================================
@@ -499,13 +535,14 @@ int main(int argc, char *argv[]) {
   if (argc < 3) {
     std::cerr << "Usage:" << std::endl;
     std::cerr << "  Mode 1 (Generate): " << argv[0]
-              << " <n> <g> <digits> [--out dir] [--csv path]" << std::endl;
+              << " <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade]"
+              << std::endl;
     std::cerr << "  Mode 2 (Evaluate): " << argv[0]
               << " eval <output_dir_or_file> <z_value> [display_digits]"
               << std::endl;
     std::cerr << "  Mode 3 (Test):     " << argv[0] << "  " << argv[0]
               << " test <n> <g> <digits> [--csv path] [--max N] [--start row] "
-                 "[--random] [--threshold %]"
+              "[--random] [--threshold %] [--auto-upgrade]"
               << std::endl;
     std::cerr << std::endl;
     std::cerr << "Example:" << std::endl;
@@ -704,6 +741,7 @@ int main(int argc, char *argv[]) {
     std::string threshold_str = "1e-6";
     int start_row = 1;
     bool random_sample = false;
+    bool auto_upgrade = false;
 
     // 命名参数解析后退兼容版
     for (int i = 5; i < argc; i++) {
@@ -718,6 +756,8 @@ int main(int argc, char *argv[]) {
         start_row = std::atoi(argv[++i]);
       } else if (arg == "--random") {
         random_sample = true;
+      } else if (arg == "--auto-upgrade") {
+        auto_upgrade = true;
       } else {
         // 后向兼容逻辑：如果不是 -- 开头，则按照原有的 positional 顺序映射
         if (i == 5)
@@ -733,6 +773,10 @@ int main(int argc, char *argv[]) {
       std::cerr << "Error: n and digits must be positive integers."
                 << std::endl;
       return 1;
+    }
+
+    if (auto_upgrade) {
+      auto_upgrade_lanczos_params(precision, n, g_str, "test");
     }
 
     // === 显示参数信息 ===
@@ -788,6 +832,7 @@ int main(int argc, char *argv[]) {
 
   std::string output_dir = "";
   std::string csv_path = "../assets/real_gamma.csv";
+  bool auto_upgrade = false;
 
   // 命名参数解析后退兼容版
   for (int i = 4; i < argc; i++) {
@@ -796,6 +841,8 @@ int main(int argc, char *argv[]) {
       output_dir = argv[++i];
     } else if (arg == "--csv" && i + 1 < argc) {
       csv_path = argv[++i];
+    } else if (arg == "--auto-upgrade") {
+      auto_upgrade = true;
     } else {
       // 后向兼容逻辑：如果不是 -- 开头，则按照原有的 positional 顺序映射
       if (i == 4)
@@ -811,6 +858,10 @@ int main(int argc, char *argv[]) {
                  std::to_string(digits);
   }
 
+  if (auto_upgrade) {
+    auto_upgrade_lanczos_params(digits, n, g_str, "generate");
+  }
+
   // 创建输出目录
   fs::create_directories(output_dir);
 
@@ -822,6 +873,13 @@ int main(int argc, char *argv[]) {
 
   // --- 计算系数 ---
   auto coeffs = compute_lanczos_coefficients(n, g_str, digits);
+
+  // 系数内部按二进制位保存，写文件时保留足够十进制位，
+  // 避免 eval 模式重载后因截断造成可见偏差。
+  int coeff_bits = static_cast<int>(std::ceil(digits * 3.3219281)) + 64;
+  int coeff_dump_digits = std::max(
+      digits,
+      static_cast<int>(std::floor(coeff_bits / 3.3219281)) - 2);
 
   // 仅保存系数到文件，不在终端刷屏输出详细数值
   // --- 保存系数文件 ---
@@ -837,17 +895,19 @@ int main(int argc, char *argv[]) {
     fout << "# n = " << n << std::endl;
     fout << "# g = " << g_str << std::endl;
     fout << "# precision = " << digits << " decimal digits" << std::endl;
+    fout << "# coefficient_dump_digits = " << coeff_dump_digits << std::endl;
     fout << "#" << std::endl;
     fout << "# Formula:" << std::endl;
     fout << "#   Gamma(z) = (base/e)^(z-0.5) * S(z)" << std::endl;
     fout << "#   where base = z + g - 0.5" << std::endl;
-    fout << "#         S(z) = p[0] + sum_{k=1}^{n-1} p[k] / (z + k - 1)"
+    fout << "#         S(z) = p[0] + sum_{k=1}^{n} p[k] / (z + k - 1)"
          << std::endl;
     fout << "#   Note: sqrt(2*pi) factor is absorbed into p[0]" << std::endl;
     fout << "#" << std::endl;
     fout << "# index, coefficient" << std::endl;
     for (int i = 0; i < static_cast<int>(coeffs.size()); i++) {
-      fout << i << ", " << coeffs[i].to_decimal_string(digits) << std::endl;
+      fout << i << ", " << coeffs[i].to_decimal_string(coeff_dump_digits)
+           << std::endl;
     }
     fout.close();
     std::cout << "\nCoefficients written to: " << coeff_path << std::endl;
@@ -860,8 +920,8 @@ int main(int argc, char *argv[]) {
     fout << "n = " << n << std::endl;
     fout << "g = " << g_str << std::endl;
     fout << "precision_decimal_digits = " << digits << std::endl;
-    int bits = static_cast<int>(std::ceil(digits * 3.3219281)) + 64;
-    fout << "precision_binary_bits = " << bits << std::endl;
+    fout << "precision_binary_bits = " << coeff_bits << std::endl;
+    fout << "coefficient_dump_digits = " << coeff_dump_digits << std::endl;
     fout.close();
   }
 
