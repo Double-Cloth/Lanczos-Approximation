@@ -42,6 +42,26 @@
 #include <omp.h>
 #endif
 
+static BigFloat pow_int_fast(const BigFloat &base, int exp) {
+  if (exp == 0) {
+    return BigFloat(1, base.precision());
+  }
+
+  BigFloat result(1, base.precision());
+  BigFloat factor = base;
+  int e = exp;
+  while (e > 0) {
+    if ((e & 1) != 0) {
+      result = result * factor;
+    }
+    e >>= 1;
+    if (e > 0) {
+      factor = factor * factor;
+    }
+  }
+  return result;
+}
+
 // ============================================
 // 辅助函数: 组合数
 // ============================================
@@ -465,7 +485,8 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     for (int j = 0; j < terms; j++) {
       BigFloat sum(0, work_bits);
       BigFloat comp(0, work_bits); // Kahan 补偿项，缓解正负项相消
-      for (int k = 0; k < terms; k++) {
+      int k_begin = std::max(i, j);
+      for (int k = k_begin; k < terms; k++) {
         if (B[i][k].val.is_zero())
           continue; // 跳过零元素（稀疏优化）
         // 将 SignedBigInt 转为 BigFloat
@@ -504,6 +525,19 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   BigFloat bf_g_f = BigFloat::from_string(g_str, f_work_bits);
   BigFloat bf_half_f = BigFloat(1, f_work_bits) / BigFloat(2, f_work_bits);
 
+  // 预计算 factorial 比值 (2i)! / i!
+  std::vector<BigInt> factorial(2 * terms, BigInt(1));
+  for (int i = 1; i < 2 * terms; i++) {
+    factorial[i] = factorial[i - 1].mul_u32(static_cast<uint32_t>(i));
+  }
+
+  std::vector<BigFloat> fact_ratio_table(terms, BigFloat(1, f_work_bits));
+  for (int i = 1; i < terms; i++) {
+    BigFloat bf_f2i = BigFloat::from_bigint(factorial[2 * i], f_work_bits);
+    BigFloat bf_fi = BigFloat::from_bigint(factorial[i], f_work_bits);
+    fact_ratio_table[i] = bf_f2i / bf_fi;
+  }
+
   // 在公式 F[i] = (2i)!/(i!) × exp(i+0.5) / 2^(2i-1) / (g+i+0.5)^i /
   // sqrt(g+i+0.5) 中 我们可以通过代数运算彻底避开 exp(i+0.5)
   // 在每一级的真实计算！ 已知 exp(i+0.5) = e^(i+0.5) 且分母有 (g+i+0.5)^i *
@@ -515,6 +549,12 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
   BigFloat exp_one = BigFloat::exp(BigFloat(1, f_work_bits));
   BigFloat exp_half = BigFloat::exp(bf_half_f);
 
+  std::vector<BigFloat> exp_term_table(terms, BigFloat(1, f_work_bits));
+  exp_term_table[0] = exp_half;
+  for (int i = 1; i < terms; i++) {
+    exp_term_table[i] = exp_term_table[i - 1] * exp_one;
+  }
+
   std::vector<BigFloat> F(terms);
   int f_count = 0;
 #pragma omp parallel for schedule(dynamic)
@@ -523,31 +563,11 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     BigFloat base = bf_g_f + bi + bf_half_f; // base = g + i + 0.5
 
     // --- (2i)! / i! ---
-    BigFloat fact_ratio(1, f_work_bits);
-    {
-      BigInt f2i(1); // 计算 (2i)!
-      for (int k = 2; k <= 2 * i; k++) {
-        f2i = f2i.mul_u32(static_cast<uint32_t>(k));
-      }
-      BigInt fi(1); // 计算 i!
-      for (int k = 2; k <= i; k++) {
-        fi = fi.mul_u32(static_cast<uint32_t>(k));
-      }
-      if (i == 0) {
-        fact_ratio = BigFloat(1, f_work_bits); // 0!/0! = 1
-      } else {
-        BigFloat bf_f2i = BigFloat::from_bigint(f2i, f_work_bits);
-        BigFloat bf_fi = BigFloat::from_bigint(fi, f_work_bits);
-        fact_ratio = bf_f2i / bf_fi;
-      }
-    }
+    BigFloat fact_ratio = fact_ratio_table[i];
 
     // --- exp(i + 0.5) 多线程安全生成 ---
-    // e^(i+0.5) = (e^1)^i * e^0.5
-    BigFloat exp_term = exp_half;
-    if (i > 0) {
-      exp_term = exp_term * BigFloat::pow(exp_one, bi);
-    }
+    // e^(i+0.5) 已预计算
+    BigFloat exp_term = exp_term_table[i];
 
     // --- 1 / 2^(2i−1): 使用 mul_pow2 高效实现（O(1) 指数调整） ---
     // i=0: 2i-1 = -1, 即乘以 2 (mul_pow2(1))
@@ -557,7 +577,7 @@ std::vector<BigFloat> compute_lanczos_coefficients(int n,
     // --- (g+i+0.5)^i ---
     BigFloat base_pow_i(1, f_work_bits);
     if (i > 0) {
-      base_pow_i = BigFloat::pow(base, bi);
+      base_pow_i = pow_int_fast(base, i);
     }
 
     // --- √(g+i+0.5) ---

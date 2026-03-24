@@ -58,3 +58,6 @@ target_link_libraries(lanczos_app PRIVATE lanczos)
 # --- 测试: BigInt/BigFloat 单元测试 ---
 add_executable(test_bigfloat tests/test_bigfloat.cpp)
 target_link_libraries(test_bigfloat PRIVATE bignum)
+
+enable_testing()
+add_test(NAME test_bigfloat COMMAND test_bigfloat)

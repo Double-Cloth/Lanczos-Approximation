@@ -17,8 +17,26 @@
 #include "BigInt.h"
 #include <cassert>
 
+#include <chrono>
+#include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <string>
+
+struct TestContext {
+  bool verbose = false;
+  int checks = 0;
+  int failed_checks = 0;
+};
+
+bool env_verbose_enabled() {
+  const char *v = std::getenv("TEST_VERBOSE");
+  if (v == nullptr) {
+    return false;
+  }
+  std::string s(v);
+  return s == "1" || s == "true" || s == "TRUE" || s == "on" || s == "ON";
+}
 
 // ========================
 // 辅助函数
@@ -62,21 +80,30 @@ BigFloat relative_error_percent(const BigFloat &computed,
  */
 bool check_relative_error(const BigFloat &computed, const BigFloat &expected,
                           const char *max_percent_str,
-                          const std::string &test_name) {
+                          const std::string &test_name, TestContext &ctx) {
+  ++ctx.checks;
   BigFloat err = relative_error_percent(computed, expected);
   int prec = std::max(computed.precision(), expected.precision());
   BigFloat max_percent = BigFloat::from_string(max_percent_str, prec);
   bool pass = (err <= max_percent);
 
-  BigFloat abs_err = (computed - expected).abs();
-  std::cout << "  " << test_name << ":" << std::endl
-            << "    computed = " << computed.to_decimal_string(15, true)
-            << std::endl
-            << "    expected = " << expected.to_decimal_string(15, true)
-            << std::endl
-            << "    abs error = " << abs_err.to_decimal_string(6, true)
-            << ", rel error = " << err.to_decimal_string(6, true) << "%"
-            << std::endl;
+  if (!pass) {
+    ++ctx.failed_checks;
+  }
+
+  if (ctx.verbose || !pass) {
+    BigFloat abs_err = (computed - expected).abs();
+    std::cout << "  " << (pass ? "[PASS] " : "[FAIL] ") << test_name << ":"
+              << std::endl
+              << "    computed = " << computed.to_decimal_string(15, true)
+              << std::endl
+              << "    expected = " << expected.to_decimal_string(15, true)
+              << std::endl
+              << "    abs error = " << abs_err.to_decimal_string(6, true)
+              << ", rel error = " << err.to_decimal_string(6, true)
+              << "%, limit = " << max_percent.to_decimal_string(6, true) << "%"
+              << std::endl;
+  }
 
   return pass;
 }
@@ -91,7 +118,7 @@ bool check_relative_error(const BigFloat &computed, const BigFloat &expected,
  *   - 除法: 100 ÷ 7 = 14 余 2
  *   - 左移: 1 << 100 的 bit_length 应为 101
  */
-bool test_bigint_basic() {
+bool test_bigint_basic(TestContext &ctx) {
   std::cout << "--- BigInt Basic Tests ---" << std::endl;
 
   BigInt a(12345);
@@ -100,19 +127,25 @@ bool test_bigint_basic() {
   // 加法测试
   BigInt c = a + b;
   assert(c.to_decimal_string() == "80235");
-  std::cout << "  [PASS] 12345 + 67890 = " << c << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  [PASS] 12345 + 67890 = " << c << std::endl;
+  }
 
   // 乘法测试
   BigInt d = a * b;
   assert(d.to_decimal_string() == "838102050");
-  std::cout << "  [PASS] 12345 * 67890 = " << d << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  [PASS] 12345 * 67890 = " << d << std::endl;
+  }
 
   // 大数乘法: 验证 18 位 × 18 位 = 36 位的正确性
   BigInt e("999999999999999999");
   BigInt f("999999999999999999");
   BigInt g = e * f;
   assert(g.to_decimal_string() == "999999999999999998000000000000000001");
-  std::cout << "  [PASS] 999999999999999999^2 = " << g << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  [PASS] 999999999999999999^2 = " << g << std::endl;
+  }
 
   // 除法: 验证商和余数
   BigInt h(100);
@@ -120,14 +153,20 @@ bool test_bigint_basic() {
   auto [q, r] = h.divmod(i);
   assert(q.to_decimal_string() == "14");
   assert(r.to_decimal_string() == "2");
-  std::cout << "  [PASS] 100 / 7 = " << q << " remainder " << r << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  [PASS] 100 / 7 = " << q << " remainder " << r << std::endl;
+  }
 
   // 位移: 1 << 100 应是 101 位
   BigInt j(1);
   BigInt k = j << 100;
   assert(k.bit_length() == 101);
-  std::cout << "  [PASS] 1 << 100: bit_length = " << k.bit_length()
-            << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  [PASS] 1 << 100: bit_length = " << k.bit_length()
+              << std::endl;
+  }
+
+  ctx.checks += 5;
 
   return true;
 }
@@ -143,7 +182,7 @@ bool test_bigint_basic() {
  *
  * 通过标准: 相对误差 ≤ 1e-30%（基本算术应几乎精确）
  */
-bool test_bigfloat_arithmetic() {
+bool test_bigfloat_arithmetic(TestContext &ctx) {
   std::cout << std::endl << "--- BigFloat Arithmetic Tests ---" << std::endl;
   int prec = 128; // 128 位精度（约 38 位十进制）
   bool all_pass = true;
@@ -153,39 +192,53 @@ bool test_bigfloat_arithmetic() {
   BigFloat b(4, prec);
   BigFloat c = a + b;
   BigFloat expected_sum(7, prec);
-  std::cout << "  computed: 3 + 4 = " << c.to_decimal_string(10) << std::endl;
-  all_pass &= check_relative_error(c, expected_sum, "1e-30", "3 + 4 = 7");
+  if (ctx.verbose) {
+    std::cout << "  computed: 3 + 4 = " << c.to_decimal_string(10) << std::endl;
+  }
+  all_pass &=
+      check_relative_error(c, expected_sum, "1e-30", "3 + 4 = 7", ctx);
 
   // 减法: 7 - 4 = 3
   BigFloat sub_result = c - b;
-  std::cout << "  computed: 7 - 4 = " << sub_result.to_decimal_string(10)
-            << std::endl;
-  all_pass &= check_relative_error(sub_result, a, "1e-30", "7 - 4 = 3");
+  if (ctx.verbose) {
+    std::cout << "  computed: 7 - 4 = " << sub_result.to_decimal_string(10)
+              << std::endl;
+  }
+  all_pass &=
+      check_relative_error(sub_result, a, "1e-30", "7 - 4 = 3", ctx);
 
   // 乘法: 3 * 4 = 12
   BigFloat d = a * b;
   BigFloat expected_prod(12, prec);
-  std::cout << "  computed: 3 * 4 = " << d.to_decimal_string(10) << std::endl;
-  all_pass &= check_relative_error(d, expected_prod, "1e-30", "3 * 4 = 12");
+  if (ctx.verbose) {
+    std::cout << "  computed: 3 * 4 = " << d.to_decimal_string(10) << std::endl;
+  }
+  all_pass &=
+      check_relative_error(d, expected_prod, "1e-30", "3 * 4 = 12", ctx);
 
   // 除法: 3 / 4 = 0.75
   BigFloat e = a / b;
   BigFloat expected_div = BigFloat::from_string("0.75", prec);
-  std::cout << "  computed: 3 / 4 = " << e.to_decimal_string(20) << std::endl;
-  all_pass &= check_relative_error(e, expected_div, "1e-30", "3 / 4 = 0.75");
+  if (ctx.verbose) {
+    std::cout << "  computed: 3 / 4 = " << e.to_decimal_string(20) << std::endl;
+  }
+  all_pass &=
+      check_relative_error(e, expected_div, "1e-30", "3 / 4 = 0.75", ctx);
 
   // 除法: 1 / 3 = 0.333...（无限循环小数，验证 * 3 ≈ 1）
   BigFloat one(1, prec);
   BigFloat three(3, prec);
   BigFloat third = one / three;
   BigFloat reconstructed = third * three;
-  std::cout << "  computed: 1 / 3 = " << third.to_decimal_string(40)
-            << std::endl;
-  std::cout << "  computed: (1/3) * 3 = " << reconstructed.to_decimal_string(40)
-            << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  computed: 1 / 3 = " << third.to_decimal_string(40)
+              << std::endl;
+    std::cout << "  computed: (1/3) * 3 = "
+              << reconstructed.to_decimal_string(40) << std::endl;
+  }
   // 循环小数允许更宽松的误差: 1e-25%（约 27 位有效数字）
-  all_pass &=
-      check_relative_error(reconstructed, one, "1e-25", "(1/3) * 3 ≈ 1");
+  all_pass &= check_relative_error(reconstructed, one, "1e-25",
+                                   "(1/3) * 3 ≈ 1", ctx);
 
   assert(all_pass);
   return all_pass;
@@ -211,7 +264,7 @@ bool test_bigfloat_arithmetic() {
  *   - Γ 函数:             相对误差 ≤ 1e-30%（≈ 32 位有效数字）
  *   - 阶乘:               相对误差 ≤ 1e-60%（精确值）
  */
-bool test_bigfloat_math() {
+bool test_bigfloat_math(TestContext &ctx) {
   std::cout << std::endl << "--- BigFloat Math Function Tests ---" << std::endl;
   int prec = 256; // 256 位精度
   bool all_pass = true;
@@ -220,78 +273,109 @@ bool test_bigfloat_math() {
   // 这些字符串来自公认的数学常量表
 
   // --- π ---
-  std::cout << "  Computing pi..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing pi..." << std::endl;
+  }
   BigFloat pi_val = BigFloat::pi(prec);
-  std::string pi_str = pi_val.to_decimal_string(50);
-  std::cout << "  pi       = " << pi_str << std::endl;
-  std::cout
-      << "  expected = 3.14159265358979323846264338327950288419716939937510"
-      << std::endl;
+  if (ctx.verbose) {
+    std::string pi_str = pi_val.to_decimal_string(50);
+    std::cout << "  pi       = " << pi_str << std::endl;
+    std::cout
+        << "  expected = 3.14159265358979323846264338327950288419716939937510"
+        << std::endl;
+  }
   BigFloat pi_expected = BigFloat::from_string(
       "3.14159265358979323846264338327950288419716939937510", prec);
-  all_pass &= check_relative_error(pi_val, pi_expected, "1e-45", "pi");
+  all_pass &= check_relative_error(pi_val, pi_expected, "1e-45", "pi", ctx);
 
   // --- √2 ---
-  std::cout << "  Computing sqrt(2)..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing sqrt(2)..." << std::endl;
+  }
   BigFloat two(2, prec);
   BigFloat sqrt2 = BigFloat::sqrt(two);
-  std::cout << "  sqrt(2)  = " << sqrt2.to_decimal_string(50) << std::endl;
-  std::cout
-      << "  expected = 1.41421356237309504880168872420969807856967187537694"
-      << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  sqrt(2)  = " << sqrt2.to_decimal_string(50) << std::endl;
+    std::cout
+        << "  expected = 1.41421356237309504880168872420969807856967187537694"
+        << std::endl;
+  }
   BigFloat sqrt2_expected = BigFloat::from_string(
       "1.41421356237309504880168872420969807856967187537694", prec);
-  all_pass &= check_relative_error(sqrt2, sqrt2_expected, "1e-45", "sqrt(2)");
+  all_pass &=
+      check_relative_error(sqrt2, sqrt2_expected, "1e-45", "sqrt(2)", ctx);
 
   // --- e ---
-  std::cout << "  Computing e..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing e..." << std::endl;
+  }
   BigFloat e_val = BigFloat::e(prec);
-  std::cout << "  e        = " << e_val.to_decimal_string(50) << std::endl;
-  std::cout
-      << "  expected = 2.71828182845904523536028747135266249775724709369995"
-      << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  e        = " << e_val.to_decimal_string(50) << std::endl;
+    std::cout
+        << "  expected = 2.71828182845904523536028747135266249775724709369995"
+        << std::endl;
+  }
   BigFloat e_expected = BigFloat::from_string(
       "2.71828182845904523536028747135266249775724709369995", prec);
-  all_pass &= check_relative_error(e_val, e_expected, "1e-45", "e");
+  all_pass &= check_relative_error(e_val, e_expected, "1e-45", "e", ctx);
 
   // --- exp(1) = e（交叉验证） ---
   BigFloat one(1, prec);
   BigFloat exp1 = BigFloat::exp(one);
-  std::cout << "  exp(1)   = " << exp1.to_decimal_string(50) << std::endl;
-  all_pass &= check_relative_error(exp1, e_expected, "1e-40", "exp(1) = e");
+  if (ctx.verbose) {
+    std::cout << "  exp(1)   = " << exp1.to_decimal_string(50) << std::endl;
+  }
+  all_pass &=
+      check_relative_error(exp1, e_expected, "1e-40", "exp(1) = e", ctx);
 
   // --- ln(e) = 1（对数验证） ---
-  std::cout << "  Computing ln(e)..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing ln(e)..." << std::endl;
+  }
   BigFloat ln_e = BigFloat::ln(e_val);
-  std::cout << "  ln(e)    = " << ln_e.to_decimal_string(50) << std::endl;
-  all_pass &= check_relative_error(ln_e, one, "1e-40", "ln(e) = 1");
+  if (ctx.verbose) {
+    std::cout << "  ln(e)    = " << ln_e.to_decimal_string(50) << std::endl;
+  }
+  all_pass &= check_relative_error(ln_e, one, "1e-40", "ln(e) = 1", ctx);
 
   // --- √π ---
-  std::cout << "  Computing sqrt(pi)..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing sqrt(pi)..." << std::endl;
+  }
   BigFloat sqrt_pi = BigFloat::sqrt(pi_val);
-  std::cout << "  sqrt(pi) = " << sqrt_pi.to_decimal_string(50) << std::endl;
-  std::cout
-      << "  expected = 1.77245385090551602729816748334114518279754945612238"
-      << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  sqrt(pi) = " << sqrt_pi.to_decimal_string(50) << std::endl;
+    std::cout
+        << "  expected = 1.77245385090551602729816748334114518279754945612238"
+        << std::endl;
+  }
   BigFloat sqrt_pi_expected = BigFloat::from_string(
       "1.77245385090551602729816748334114518279754945612238", prec);
   all_pass &=
-      check_relative_error(sqrt_pi, sqrt_pi_expected, "1e-45", "sqrt(pi)");
+      check_relative_error(sqrt_pi, sqrt_pi_expected, "1e-45", "sqrt(pi)",
+                           ctx);
 
   // --- Γ(0.5) = √π ---
   // 通过 half_factorial(0) 计算 (−0.5)! = Γ(0.5)
-  std::cout << "  Computing Gamma(0.5) = (-0.5)! ..." << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Computing Gamma(0.5) = (-0.5)! ..." << std::endl;
+  }
   BigFloat gamma_half = BigFloat::half_factorial(0, prec);
-  std::cout << "  Gamma(0.5) = " << gamma_half.to_decimal_string(50)
-            << std::endl;
+  if (ctx.verbose) {
+    std::cout << "  Gamma(0.5) = " << gamma_half.to_decimal_string(50)
+              << std::endl;
+  }
   all_pass &= check_relative_error(gamma_half, sqrt_pi_expected, "1e-30",
-                                   "Gamma(0.5) = sqrt(pi)");
+                                   "Gamma(0.5) = sqrt(pi)", ctx);
 
   // --- 5! = 120 ---
   BigFloat f5 = BigFloat::factorial(5, prec);
   BigFloat expected_f5(120, prec);
-  std::cout << "  5!       = " << f5.to_decimal_string(5) << std::endl;
-  all_pass &= check_relative_error(f5, expected_f5, "1e-45", "5! = 120");
+  if (ctx.verbose) {
+    std::cout << "  5!       = " << f5.to_decimal_string(5) << std::endl;
+  }
+  all_pass &= check_relative_error(f5, expected_f5, "1e-45", "5! = 120", ctx);
 
   assert(all_pass);
   return all_pass;
@@ -300,17 +384,43 @@ bool test_bigfloat_math() {
 /**
  * @brief 测试入口
  */
-int main() {
+bool run_suite(const std::string &name,
+               const std::function<bool(TestContext &)> &fn,
+               TestContext &ctx) {
+  auto start = std::chrono::steady_clock::now();
+  bool ok = fn(ctx);
+  auto end = std::chrono::steady_clock::now();
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+  std::cout << "[" << (ok ? "PASS" : "FAIL") << "] " << name << " ("
+            << ms.count() << " ms)" << std::endl;
+  return ok;
+}
+
+int main(int argc, char **argv) {
+  TestContext ctx;
+  ctx.verbose = env_verbose_enabled();
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--verbose") {
+      ctx.verbose = true;
+    }
+  }
+
   std::cout << "=============================" << std::endl;
   std::cout << " BigFloat Unit Tests" << std::endl;
+  std::cout << " Verbose: " << (ctx.verbose ? "ON" : "OFF") << std::endl;
   std::cout << "=============================" << std::endl;
 
   bool all_pass = true;
-  all_pass &= test_bigint_basic();
-  all_pass &= test_bigfloat_arithmetic();
-  all_pass &= test_bigfloat_math();
+  all_pass &= run_suite("BigInt Basic", test_bigint_basic, ctx);
+  all_pass &= run_suite("BigFloat Arithmetic", test_bigfloat_arithmetic, ctx);
+  all_pass &= run_suite("BigFloat Math", test_bigfloat_math, ctx);
 
   std::cout << std::endl << "=============================" << std::endl;
+  std::cout << " Checks: " << ctx.checks << ", Failed checks: " << ctx.failed_checks
+            << std::endl;
   if (all_pass) {
     std::cout << " All tests PASSED." << std::endl;
   } else {

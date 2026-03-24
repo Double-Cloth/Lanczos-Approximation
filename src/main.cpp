@@ -3,7 +3,7 @@
  * @brief Lanczos 近似系数计算器的命令行入口程序
  *
  * @details
- * 支持两种运行模式:
+ * 支持三种运行模式:
  *
  *   模式 1 (Generate): 计算 Lanczos 系数并用 CSV 数据验证精度
  *     用法: lanczos_app <n> <g> <digits> [output_dir] [csv_path]
@@ -540,7 +540,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "  Mode 2 (Evaluate): " << argv[0]
               << " eval <output_dir_or_file> <z_value> [display_digits]"
               << std::endl;
-    std::cerr << "  Mode 3 (Test):     " << argv[0] << "  " << argv[0]
+    std::cerr << "  Mode 3 (Test):     " << argv[0]
               << " test <n> <g> <digits> [--csv path] [--max N] [--start row] "
               "[--random] [--threshold %] [--auto-upgrade]"
               << std::endl;
@@ -703,16 +703,30 @@ int main(int argc, char *argv[]) {
       coeffs.push_back(BigFloat::from_string(val_str, prec_bits));
     }
 
-    // 验证系数数量
-    if (coeffs.size() != static_cast<size_t>(n)) {
-      if (!is_dir) {
-        // 对于单文件导入，如果 N 和实际系数个数不一致，以实际系数个数为准
-        n = coeffs.size();
+    // 验证并归一化系数数量语义：
+    // 新语义: n 为最高索引 N，系数数 = N+1
+    // 旧语义: n 为系数数 count，系数数 = n
+    if (coeffs.empty()) {
+      std::cerr << "Error: no coefficients found." << std::endl;
+      return 1;
+    }
+
+    if (is_dir) {
+      const size_t coeff_count = coeffs.size();
+      if (coeff_count == static_cast<size_t>(n) + 1) {
+        // 新格式，n 已是最高索引
+      } else if (coeff_count == static_cast<size_t>(n)) {
+        // 兼容旧格式参数文件（n 表示项数）
+        n = static_cast<int>(coeff_count) - 1;
       } else {
-        std::cerr << "Error: expected " << n << " coefficients, but found "
-                  << coeffs.size() << std::endl;
+        std::cerr << "Error: parameters/coefficient count mismatch. "
+                  << "n=" << n << ", coefficient_count=" << coeff_count
+                  << std::endl;
         return 1;
       }
+    } else {
+      // 单文件输入以实际系数数量为准
+      n = static_cast<int>(coeffs.size()) - 1;
     }
 
     // --- 计算并输出 Γ(z) ---
@@ -919,6 +933,7 @@ int main(int argc, char *argv[]) {
     std::ofstream fout(params_path);
     fout << "n = " << n << std::endl;
     fout << "g = " << g_str << std::endl;
+    fout << "coefficient_count = " << coeffs.size() << std::endl;
     fout << "precision_decimal_digits = " << digits << std::endl;
     fout << "precision_binary_bits = " << coeff_bits << std::endl;
     fout << "coefficient_dump_digits = " << coeff_dump_digits << std::endl;
