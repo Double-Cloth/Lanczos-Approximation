@@ -196,7 +196,7 @@ TEST_VERBOSE=1 ./build/test_bigfloat
 验证采用相对误差百分比：
 
 $$
-\text{relative error \%} = \frac{|\text{computed} - \text{expected}|}{|\text{expected}|} \times 100
+\text{relative error \%} = \frac{|\text{computed} - \text{expected}|}{|\text{expected}|}
 $$
 
 - 测试模式：阈值由 --threshold 指定。
