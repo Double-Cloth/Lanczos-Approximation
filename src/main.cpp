@@ -216,8 +216,9 @@ static std::string fix_expected_value(const std::string &computed,
  * @param threshold_str 相对误差阈值百分比 (如 "1e-6")
  * @param output_dir    输出目录，若指定则将结果同时写入 "verification.txt"
  * @param filter_z_le_50 是否只测试 z <= 50 的点
+ * @return true 表示本次成功写出 verification 文件
  */
-static void run_csv_verification(
+static bool run_csv_verification(
     const std::string &csv_path, const std::vector<BigFloat> &coeffs, int n,
     const std::string &g_str, int precision, int max_tests, int start_row,
     bool random_sample, const std::string &threshold_str,
@@ -229,7 +230,7 @@ static void run_csv_verification(
   if (!csv_file.is_open()) {
     std::cerr << "Warning: cannot open " << csv_path
               << ", skipping CSV verification." << std::endl;
-    return;
+    return false;
   }
 
   // 加载并可能筛选测试数据
@@ -304,12 +305,14 @@ static void run_csv_verification(
   std::cout << std::endl;
 
   std::ofstream vout;
+  bool wrote_verification = false;
   std::string verify_path = "verification.txt";
   if (!output_dir.empty()) {
     verify_path = output_dir + "/verification.txt";
   }
   vout.open(verify_path);
   if (vout.is_open()) {
+    wrote_verification = true;
     vout << "# Lanczos Gamma Function Verification Results" << std::endl;
     vout << "# Parameters: n=" << n << ", g=" << g_str
          << ", digits=" << precision << std::endl;
@@ -524,6 +527,8 @@ static void run_csv_verification(
     std::cout << "  Avg relative error:  "
               << avg_error.to_decimal_string(6, true) << "%" << std::endl;
   }
+
+          return wrote_verification;
 }
 
 // ============================================
@@ -919,10 +924,81 @@ int main(int argc, char *argv[]) {
     fout << "#   Note: sqrt(2*pi) factor is absorbed into p[0]" << std::endl;
     fout << "#" << std::endl;
     fout << "# index, coefficient" << std::endl;
-    for (int i = 0; i < static_cast<int>(coeffs.size()); i++) {
+    int total_coeffs = static_cast<int>(coeffs.size());
+    auto write_start = std::chrono::high_resolution_clock::now();
+    auto write_last_time = write_start;
+    int write_last_count = 0;
+    double write_ema_ms_per_step = 0.0;
+    bool show_write_progress = false;
+    constexpr double write_progress_threshold_ms = 1200.0;
+
+    for (int i = 0; i < total_coeffs; i++) {
       fout << i << ", " << coeffs[i].to_decimal_string(coeff_dump_digits)
            << std::endl;
+
+      int current = i + 1;
+      if (current - write_last_count >= std::max(1, total_coeffs / 20) ||
+          current == total_coeffs) {
+        auto now = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> window_diff =
+            now - write_last_time;
+        int window_steps = current - write_last_count;
+
+        if (window_steps > 0) {
+          double current_ms_per_step = window_diff.count() / window_steps;
+          if (write_ema_ms_per_step == 0.0) {
+            write_ema_ms_per_step = current_ms_per_step;
+          } else {
+            write_ema_ms_per_step =
+                0.7 * write_ema_ms_per_step + 0.3 * current_ms_per_step;
+          }
+        }
+
+        write_last_time = now;
+        write_last_count = current;
+
+        if (!show_write_progress) {
+          std::chrono::duration<double, std::milli> total_elapsed =
+              now - write_start;
+          if (total_elapsed.count() >= write_progress_threshold_ms &&
+              current < total_coeffs) {
+            show_write_progress = true;
+          }
+        }
+      }
+
+      if (show_write_progress) {
+        double remaining_ms =
+            write_ema_ms_per_step * (total_coeffs - current);
+        int progress_percent = (current * 100) / total_coeffs;
+        int bar_pos = (50 * current) / total_coeffs;
+
+        std::cout << "\r";
+        std::cout << "[write] [";
+        for (int j = 0; j < 50; ++j) {
+          if (j < bar_pos)
+            std::cout << "=";
+          else if (j == bar_pos)
+            std::cout << ">";
+          else
+            std::cout << " ";
+        }
+        std::cout << "] " << progress_percent << " % (" << current << "/"
+                  << total_coeffs << ") ";
+        if (current < total_coeffs && write_ema_ms_per_step > 0) {
+          std::cout << "ETA: " << std::fixed << std::setprecision(1)
+                    << (remaining_ms / 1000.0) << "s  ";
+        } else if (current == total_coeffs) {
+          std::cout << "ETA: 0.0s  ";
+        }
+        std::cout << std::flush;
+      }
     }
+
+    if (show_write_progress) {
+      std::cout << "\r" << std::string(100, ' ') << "\r";
+    }
+
     fout.close();
     std::cout << "\nCoefficients written to: " << coeff_path << std::endl;
   }
@@ -948,16 +1024,20 @@ int main(int argc, char *argv[]) {
   std::string threshold_str = threshold.to_decimal_string(2, true);
 
   // 调用通用验证函数, 对于 Generate 全量验证，传 start=1, random=false
-  run_csv_verification(csv_path, coeffs, n, g_str, digits, -1, 1, false,
-                       threshold_str, output_dir, true);
+  bool verification_written = run_csv_verification(
+      csv_path, coeffs, n, g_str, digits, -1, 1, false, threshold_str,
+      output_dir, true);
 
   std::cout << "\n=== Output Files ===" << std::endl;
   std::cout << "  " << output_dir
             << "/coefficients.txt   - Lanczos coefficients" << std::endl;
   std::cout << "  " << output_dir
             << "/parameters.txt     - Computation parameters" << std::endl;
-  std::cout << "  " << output_dir
-            << "/verification.txt   - Gamma function test results" << std::endl;
+  if (verification_written) {
+    std::cout << "  " << output_dir
+              << "/verification.txt   - Gamma function test results"
+              << std::endl;
+  }
 
   return 0;
 }
