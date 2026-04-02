@@ -1,5 +1,7 @@
 # Lanczos Approximation
 
+[中文](README.md) | [English](README.en.md)
+
 一个基于任意精度 BigInt/BigFloat 的 Lanczos Gamma 计算项目，包含：
 
 - 系数生成与落盘
