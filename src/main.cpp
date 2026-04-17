@@ -6,11 +6,11 @@
  * 支持三种运行模式:
  *
  *   模式 1 (Generate): 计算 Lanczos 系数并用 CSV 数据验证精度
- *     用法: lanczos_app <n> <g> <digits> [output_dir] [csv_path]
+ *     用法: lanczos_app <n> <g> <digits> [output_dir] [csv_path] [--hex]
  *     示例: lanczos_app 7 5.0 16
  *
  *   模式 2 (Evaluate): 从已保存的系数文件中读取系数，计算指定点的 Γ(z)
- *     用法: lanczos_app eval <output_dir> <z_value> [display_digits]
+ *     用法: lanczos_app eval <output_dir> <z_value> [display_digits] [--hex]
  *     示例: lanczos_app eval output_n7_g5.0_d16 50.5 50
  *
  * 输出文件:
@@ -540,10 +540,10 @@ int main(int argc, char *argv[]) {
   if (argc < 3) {
     std::cerr << "Usage:" << std::endl;
     std::cerr << "  Mode 1 (Generate): " << argv[0]
-              << " <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade]"
+              << " <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade] [--hex]"
               << std::endl;
     std::cerr << "  Mode 2 (Evaluate): " << argv[0]
-              << " eval <output_dir_or_file> <z_value> [display_digits]"
+              << " eval <output_dir_or_file> <z_value> [display_digits] [--hex]"
               << std::endl;
     std::cerr << "  Mode 3 (Test):     " << argv[0]
               << " test <n> <g> <digits> [--csv path] [--max N] [--start row] "
@@ -552,8 +552,11 @@ int main(int argc, char *argv[]) {
     std::cerr << std::endl;
     std::cerr << "Example:" << std::endl;
     std::cerr << "  " << argv[0] << " 7 5.0 16" << std::endl;
+    std::cerr << "  " << argv[0] << " 7 5.0 16 --hex" << std::endl;
     std::cerr << "  " << argv[0] << " eval output_n7_g5.0_d16 50.5"
               << std::endl;
+    std::cerr << "  " << argv[0] << " eval output_n7_g5.0_d16 50.5 --hex"
+          << std::endl;
     std::cerr << "  " << argv[0] << " eval \"coef_file.txt\" 50.5" << std::endl;
     std::cerr << "  " << argv[0] << " test 7 5.0 16 --max 50 --random"
               << std::endl;
@@ -576,13 +579,23 @@ int main(int argc, char *argv[]) {
 
     // 可选: 自定义显示精度
     int custom_display_digits = -1;
-    if (argc >= 5) {
-      custom_display_digits = std::atoi(argv[4]);
+    bool use_hex_output = false;
+    for (int i = 4; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--hex") {
+        use_hex_output = true;
+      } else if (!arg.empty() && arg[0] != '-' && custom_display_digits < 0) {
+        custom_display_digits = std::atoi(arg.c_str());
+      } else {
+        std::cerr << "Error: unknown eval option: " << arg << std::endl;
+        return 1;
+      }
     }
 
     // --- 读取参数文件与系数文件 ---
     int n = 0, digits = 0, file_prec_bits = 0;
     std::string g_str;
+    std::string coefficient_format = "decimal";
     std::vector<std::string> coeff_strs;
     std::string line;
 
@@ -658,6 +671,8 @@ int main(int argc, char *argv[]) {
           g_str = line.substr(4);
         else if (line.find("precision_decimal_digits = ") == 0)
           digits = std::stoi(line.substr(27));
+        else if (line.find("coefficient_format = ") == 0)
+          coefficient_format = line.substr(21);
       }
       fparams.close();
 
@@ -704,8 +719,28 @@ int main(int argc, char *argv[]) {
 
     // 解析系数
     std::vector<BigFloat> coeffs;
+    auto parse_coeff_value = [&](const std::string &val_str) -> BigFloat {
+      bool looks_hex = false;
+      size_t start = val_str.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        return BigFloat(0, prec_bits);
+      }
+      if (val_str[start] == '+' || val_str[start] == '-') {
+        ++start;
+      }
+      if (start + 2 <= val_str.size() && val_str[start] == '0' &&
+          (val_str[start + 1] == 'x' || val_str[start + 1] == 'X')) {
+        looks_hex = true;
+      }
+
+      if (coefficient_format == "hex" || looks_hex) {
+        return BigFloat::from_hex_string(val_str, prec_bits);
+      }
+      return BigFloat::from_string(val_str, prec_bits);
+    };
+
     for (const auto &val_str : coeff_strs) {
-      coeffs.push_back(BigFloat::from_string(val_str, prec_bits));
+      coeffs.push_back(parse_coeff_value(val_str));
     }
 
     // 验证并归一化系数数量语义：
@@ -738,9 +773,16 @@ int main(int argc, char *argv[]) {
     BigFloat z = BigFloat::from_string(z_str, prec_bits);
     BigFloat gamma_val = lanczos_gamma(z, coeffs, g_str, work_digits);
 
-    std::cout << "Gamma(" << z_str
-              << ") = " << gamma_val.to_decimal_string(display_digits)
-              << std::endl;
+    if (use_hex_output) {
+      // 16 进制位数按显示位数使用，保持与原 display_digits 参数语义一致。
+      std::cout << "Gamma(" << z_str
+                << ") = " << gamma_val.to_hex_string(display_digits)
+                << std::endl;
+    } else {
+      std::cout << "Gamma(" << z_str
+                << ") = " << gamma_val.to_decimal_string(display_digits)
+                << std::endl;
+    }
 
     return 0;
   }
@@ -852,6 +894,7 @@ int main(int argc, char *argv[]) {
   std::string output_dir = "";
   std::string csv_path = "../assets/real_gamma.csv";
   bool auto_upgrade = false;
+  bool output_hex = false;
 
   // 命名参数解析后退兼容版
   for (int i = 4; i < argc; i++) {
@@ -862,6 +905,8 @@ int main(int argc, char *argv[]) {
       csv_path = argv[++i];
     } else if (arg == "--auto-upgrade") {
       auto_upgrade = true;
+    } else if (arg == "--hex") {
+      output_hex = true;
     } else {
       // 后向兼容逻辑：如果不是 -- 开头，则按照原有的 positional 顺序映射
       if (i == 4)
@@ -899,6 +944,7 @@ int main(int argc, char *argv[]) {
   int coeff_dump_digits = std::max(
       digits,
       static_cast<int>(std::floor(coeff_bits / 3.3219281)) - 2);
+  int coeff_dump_hex_digits = std::max(1, (coeff_bits + 3) / 4);
 
   // 仅保存系数到文件，不在终端刷屏输出详细数值
   // --- 保存系数文件 ---
@@ -914,7 +960,14 @@ int main(int argc, char *argv[]) {
     fout << "# n = " << n << std::endl;
     fout << "# g = " << g_str << std::endl;
     fout << "# precision = " << digits << " decimal digits" << std::endl;
-    fout << "# coefficient_dump_digits = " << coeff_dump_digits << std::endl;
+    fout << "# coefficient_format = " << (output_hex ? "hex" : "decimal")
+         << std::endl;
+    if (output_hex) {
+      fout << "# coefficient_dump_hex_digits = " << coeff_dump_hex_digits
+           << std::endl;
+    } else {
+      fout << "# coefficient_dump_digits = " << coeff_dump_digits << std::endl;
+    }
     fout << "#" << std::endl;
     fout << "# Formula:" << std::endl;
     fout << "#   Gamma(z) = (base/e)^(z-0.5) * S(z)" << std::endl;
@@ -933,8 +986,13 @@ int main(int argc, char *argv[]) {
     constexpr double write_progress_threshold_ms = 1200.0;
 
     for (int i = 0; i < total_coeffs; i++) {
-      fout << i << ", " << coeffs[i].to_decimal_string(coeff_dump_digits)
+       if (output_hex) {
+         fout << i << ", " << coeffs[i].to_hex_string(coeff_dump_hex_digits)
            << std::endl;
+       } else {
+         fout << i << ", " << coeffs[i].to_decimal_string(coeff_dump_digits)
+           << std::endl;
+       }
 
       int current = i + 1;
       if (current - write_last_count >= std::max(1, total_coeffs / 20) ||
@@ -1012,7 +1070,14 @@ int main(int argc, char *argv[]) {
     fout << "coefficient_count = " << coeffs.size() << std::endl;
     fout << "precision_decimal_digits = " << digits << std::endl;
     fout << "precision_binary_bits = " << coeff_bits << std::endl;
-    fout << "coefficient_dump_digits = " << coeff_dump_digits << std::endl;
+    fout << "coefficient_format = " << (output_hex ? "hex" : "decimal")
+         << std::endl;
+    if (output_hex) {
+      fout << "coefficient_dump_hex_digits = " << coeff_dump_hex_digits
+           << std::endl;
+    } else {
+      fout << "coefficient_dump_digits = " << coeff_dump_digits << std::endl;
+    }
     fout.close();
   }
 

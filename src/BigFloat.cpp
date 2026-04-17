@@ -15,6 +15,7 @@
 #include "BigFloat.h"
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <stdexcept>
 
 // ============================================
@@ -397,6 +398,102 @@ BigFloat BigFloat::from_string(const std::string &str, int prec_bits) {
 
   result.sign_ = sign;
   result.set_precision(prec_bits);
+  return result;
+}
+
+BigFloat BigFloat::from_hex_string(const std::string &str, int prec_bits) {
+  if (str.empty())
+    return BigFloat(0, prec_bits);
+
+  auto hex_value = [](char c) -> int {
+    if (c >= '0' && c <= '9')
+      return c - '0';
+    if (c >= 'a' && c <= 'f')
+      return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F')
+      return 10 + (c - 'A');
+    return -1;
+  };
+
+  auto trim_copy = [](const std::string &s) {
+    size_t b = 0;
+    size_t e = s.size();
+    while (b < e && std::isspace(static_cast<unsigned char>(s[b])))
+      ++b;
+    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1])))
+      --e;
+    return s.substr(b, e - b);
+  };
+
+  std::string s = trim_copy(str);
+  if (s.empty())
+    return BigFloat(0, prec_bits);
+
+  bool sign = false;
+  size_t i = 0;
+  if (s[i] == '+' || s[i] == '-') {
+    sign = (s[i] == '-');
+    ++i;
+  }
+
+  if (i + 2 > s.size() || s[i] != '0' || (s[i + 1] != 'x' && s[i + 1] != 'X')) {
+    throw std::runtime_error("invalid hex float: missing 0x prefix");
+  }
+  i += 2;
+
+  std::string int_part;
+  std::string frac_part;
+
+  while (i < s.size() && hex_value(s[i]) >= 0) {
+    int_part.push_back(s[i++]);
+  }
+  if (i < s.size() && s[i] == '.') {
+    ++i;
+    while (i < s.size() && hex_value(s[i]) >= 0) {
+      frac_part.push_back(s[i++]);
+    }
+  }
+
+  if (int_part.empty() && frac_part.empty()) {
+    throw std::runtime_error("invalid hex float: no hex digits");
+  }
+
+  int p_exp = 0;
+  if (i < s.size() && (s[i] == 'p' || s[i] == 'P')) {
+    ++i;
+    if (i >= s.size()) {
+      throw std::runtime_error("invalid hex float: missing binary exponent");
+    }
+    p_exp = std::stoi(s.substr(i));
+  } else if (i != s.size()) {
+    throw std::runtime_error("invalid hex float: unexpected tail");
+  }
+
+  std::string all_hex = int_part + frac_part;
+  size_t nz = 0;
+  while (nz < all_hex.size() && all_hex[nz] == '0')
+    ++nz;
+  if (nz == all_hex.size()) {
+    return BigFloat(0, prec_bits);
+  }
+  all_hex = all_hex.substr(nz);
+
+  BigInt mant(0);
+  for (char c : all_hex) {
+    int v = hex_value(c);
+    mant = mant.mul_u32(16);
+    mant += BigInt(static_cast<uint64_t>(v));
+  }
+
+  int64_t exp2 = static_cast<int64_t>(p_exp) -
+                 static_cast<int64_t>(frac_part.size()) * 4;
+
+  BigFloat result;
+  result.sign_ = sign;
+  result.mantissa_ = mant;
+  result.exponent_ = exp2;
+  result.precision_bits_ = prec_bits;
+  result.normalize();
   return result;
 }
 
@@ -1409,6 +1506,50 @@ std::string BigFloat::to_decimal_string(int decimal_digits,
   }
 
   return result;
+}
+
+std::string BigFloat::to_hex_string(int hex_frac_digits) const {
+  if (is_zero()) {
+    return "0x0p+0";
+  }
+
+  if (hex_frac_digits < 0) {
+    hex_frac_digits = 0;
+  }
+
+  static const char *HEX = "0123456789abcdef";
+
+  const int bl = mantissa_.bit_length();
+  const int64_t exp2 = exponent_ + static_cast<int64_t>(bl) - 1;
+
+  std::string out;
+  if (sign_) {
+    out.push_back('-');
+  }
+  out += "0x1";
+
+  if (hex_frac_digits > 0) {
+    out.push_back('.');
+    for (int i = 0; i < hex_frac_digits; ++i) {
+      int nibble = 0;
+      const int high_bit = bl - 2 - i * 4;
+      for (int j = 0; j < 4; ++j) {
+        const int bit_pos = high_bit - j;
+        nibble <<= 1;
+        if (bit_pos >= 0 && mantissa_.get_bit(bit_pos)) {
+          nibble |= 1;
+        }
+      }
+      out.push_back(HEX[nibble]);
+    }
+  }
+
+  out.push_back('p');
+  if (exp2 >= 0) {
+    out.push_back('+');
+  }
+  out += std::to_string(exp2);
+  return out;
 }
 
 /** @brief 流输出运算符（默认 20 位有效数字） */

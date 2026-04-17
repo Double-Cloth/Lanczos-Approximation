@@ -73,7 +73,7 @@ Computes coefficients, writes output files, and runs CSV verification
 (by default only checks z <= 50, with no upper bound on the number of test points).
 
 ```bash
-./build/lanczos_app <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade]
+./build/lanczos_app <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade] [--hex]
 ```
 
 Arguments:
@@ -84,11 +84,15 @@ Arguments:
 - --out: output directory (default: output_n<n>_g<g>_d<digits>)
 - --csv: verification data file (default: ../assets/real_gamma.csv)
 - --auto-upgrade: auto-upgrade n/g to recommended levels based on digits
+- --hex: write coefficients in coefficients.txt using hexadecimal scientific notation (`0x1.ffffp+N`)
 
 Example:
 
 ```bash
 ./build/lanczos_app 20 21.5 80 --out output_n20_g21.5_d80
+
+# Hex coefficient output
+./build/lanczos_app 20 21.5 80 --hex
 ```
 
 ### 2) Eval Mode
@@ -96,7 +100,7 @@ Example:
 Loads parameters and coefficients from an existing output directory or a single coefficient text file, then evaluates Gamma(z).
 
 ```bash
-./build/lanczos_app eval <output_dir_or_file> <z_value> [display_digits]
+./build/lanczos_app eval <output_dir_or_file> <z_value> [display_digits] [--hex]
 ```
 
 Arguments:
@@ -106,11 +110,15 @@ Arguments:
   - Single-file mode: supports text containing state / approx coef sections
 - z_value: target z
 - display_digits: optional display precision; if omitted, the program chooses automatically
+- --hex: optional, print result in hexadecimal scientific notation (format like `0x1.ffffp+N`)
 
 Example:
 
 ```bash
 ./build/lanczos_app eval output_n20_g21.5_d80 50.5 40
+
+# Hex output
+./build/lanczos_app eval output_n20_g21.5_d80 50.5 40 --hex
 ```
 
 ### 3) Test Mode

@@ -72,7 +72,7 @@ cmake --build build --config Release
 计算系数，写出结果文件，并执行 CSV 验证（默认只验证 z <= 50，测试点数量不设上限）。
 
 ```bash
-./build/lanczos_app <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade]
+./build/lanczos_app <n> <g> <digits> [--out dir] [--csv path] [--auto-upgrade] [--hex]
 ```
 
 参数说明：
@@ -83,11 +83,15 @@ cmake --build build --config Release
 - --out：输出目录（默认 output_n<n>_g<g>_d<digits>）
 - --csv：验证数据文件（默认 ../assets/real_gamma.csv）
 - --auto-upgrade：根据 digits 自动升级 n/g 到推荐档位
+- --hex：将 coefficients.txt 中的系数按十六进制科学计数法写出（`0x1.ffffp+N`）
 
 示例：
 
 ```bash
 ./build/lanczos_app 20 21.5 80 --out output_n20_g21.5_d80
+
+# 16进制系数输出
+./build/lanczos_app 20 21.5 80 --hex
 ```
 
 ### 2) 求值模式（Eval）
@@ -95,7 +99,7 @@ cmake --build build --config Release
 从已有输出目录或单文件系数文本读取参数与系数，计算单点 Gamma(z)。
 
 ```bash
-./build/lanczos_app eval <output_dir_or_file> <z_value> [display_digits]
+./build/lanczos_app eval <output_dir_or_file> <z_value> [display_digits] [--hex]
 ```
 
 参数说明：
@@ -105,11 +109,15 @@ cmake --build build --config Release
   - 单文件模式：支持包含 state / approx coef 段的文本
 - z_value：要计算的 z
 - display_digits：可选，显示位数；不传时程序自动选择
+- --hex：可选，按十六进制科学计数法输出（格式类似 `0x1.ffffp+N`）
 
 示例：
 
 ```bash
 ./build/lanczos_app eval output_n20_g21.5_d80 50.5 40
+
+# 十六进制输出
+./build/lanczos_app eval output_n20_g21.5_d80 50.5 40 --hex
 ```
 
 ### 3) 测试模式（Test）

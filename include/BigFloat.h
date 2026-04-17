@@ -80,6 +80,13 @@ public:
      */
     static BigFloat from_string(const std::string &str, int prec_bits);
 
+    /**
+     * @brief 从十六进制科学计数法字符串构造
+     * @param str 支持格式: "[-]0xH.HHHp±E"
+     * @param prec_bits 目标精度
+     */
+    static BigFloat from_hex_string(const std::string &str, int prec_bits);
+
     /** @brief 复制/移动（编译器默认实现） */
     BigFloat(const BigFloat &) = default;
 
@@ -287,6 +294,13 @@ public:
      */
     [[nodiscard]] std::string to_decimal_string(int decimal_digits,
                                                 bool scientific_notation = true) const;
+
+        /**
+         * @brief 将 BigFloat 转换为十六进制科学计数法字符串
+         * @param hex_frac_digits 小数点后十六进制位数
+         * @details 输出格式: [-]0x1.ffffp+N
+         */
+        std::string to_hex_string(int hex_frac_digits = 16) const;
 
     friend std::ostream &operator<<(std::ostream &os, const BigFloat &f);
 
